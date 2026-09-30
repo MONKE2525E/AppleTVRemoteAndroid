@@ -3,6 +3,7 @@ import { TurboModuleRegistry } from 'react-native';
 
 /** Special-access status, app-settings shortcuts, and tiny persisted preferences. */
 export interface Spec extends TurboModule {
+  getAppInfo(): Promise<Object>;
   canInstallPackages(): Promise<boolean>;
   openInstallSettings(): void;
   openAppSettings(): void;

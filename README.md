@@ -2,14 +2,14 @@
 
 Control Apple TVs and Roku TVs from Android. The React Native interface uses
 a Kotlin Companion Link / MRP implementation for Apple TV and ECP for Roku,
-with a foreground service for background playback controls.
+with a bound service for the remote connection and playback details.
 
 ## Architecture
 
 ```
 React Native UI (src/)
   -> TurboModule command/event facade (AppleTVModule.kt, FoldStateModule.kt, HapticsModule.kt)
-    -> AppleTVService (connectedDevice foreground service, owns lifetime)
+    -> AppleTVService (bound service, owns the controller)
       -> AppleTVController (session/controller layer, only class besides
          discovery/securestore that touches the protocol module directly)
         -> android/protocol (vendored, near-verbatim -- see android/protocol/UPSTREAM.md)
@@ -18,9 +18,8 @@ React Native UI (src/)
 `FoldStateModule` is independent of `AppleTVService`. `Media3PlaybackAdapter`
 is a projection of `AppleTVController`'s MRP now-playing state onto a Media3
 `Player`, not a second state machine -- commands issued through the Media3
-session forward back into the controller. RN reloading, backgrounding, or
-crashing never tears down a live Apple TV connection: the service is both
-*started* and *bound*, and rebuilds its session from persisted state
+session forward back into the controller. The service stays alive while clients
+are bound and rebuilds its session from persisted state
 (`CredentialStore` / `AppleTvSecureStore`, AndroidKeyStore-backed AES-GCM, no
 EncryptedSharedPreferences) on every `onCreate()`, including after process
 death.
@@ -90,21 +89,21 @@ layout mode, and the Media3 session projection. The diagnostics entry is disable
 - [ ] Reconnect after Wi-Fi loss/change
 - [ ] Pairing cancel and pairing failure (wrong PIN) recover cleanly
 - [ ] Background the app during playback, then foreground -- state is intact
-- [ ] System media controls (notification/lock screen) reflect Apple TV playback via Media3
-- [ ] Force-kill the app process while connected -- `AppleTVService` and the notification survive, or a clean reconnect happens on next foreground
+- [ ] Opening and connecting the remote posts no connection or playback notification
+- [ ] After process death, reopening the app reconnects cleanly
 
 ## Playback controls and Roku TVs
 
-- The remote starts a connected-device foreground service while the app is open.
-  After connecting, allow notifications and, if needed, allow background battery
-  use in Android's app settings. Playback appears in standard Android media
-  controls. Exact lock-screen and notification placement depends on the phone.
-- For Apple TV content details, tap **Enable playback details and background
-  controls** and enter the separate AirPlay code. Companion pairing alone only
+- The remote uses a bound service and posts no ongoing connection or playback
+  notifications. Android may stop the connection in the background. Reopening
+  the app rebuilds the connection from saved pairing credentials.
+- For Apple TV content details, open **Settings > Enable playback details**
+  and enter the separate AirPlay code. Companion pairing alone only
   enables remote commands. The metadata connection retries after a dropped
   channel or failed heartbeat.
 - Add the **TV playback controls** widget from your launcher's widget picker to
-  see available content details and play/pause directly from the home screen.
+  see available content details. Its play/pause button opens the remote and
+  sends the command once the service binds.
 - Each touchpad swipe sends one directional step. Lift your finger before the
   next swipe; dragging farther does not repeat navigation.
 - Discovery includes Roku SSDP alongside Apple's Companion discovery. Roku TVs
@@ -114,15 +113,16 @@ layout mode, and the Media3 session projection. The diagnostics entry is disable
   Roku navigation, play/pause, volume keys, mute and TV power are supported.
   Roku content metadata varies by channel; exact seeking and skip-by-seconds
   are not advertised. This does not add generic HomeKit or all AirPlay TV support.
-- Apple TV volume reads the reported level for each adjustment and falls back
-  to volume keys if absolute volume is unavailable. Infrared-only audio setups
+- Apple TV volume uses relative up/down keys. Held rocker repeats do not queue
+  behind a slow TV, and stale input expires. Every key press attempts a release
+  even when cancelled or when an acknowledgement fails. Infrared-only audio setups
   still need a physical remote or another supported control path.
 
 Roku protocol reference: https://developer.roku.com/dev/docs/external-control-api
 
 Verification for this update includes TypeScript, Jest swipe regression and
 render checks, native Roku parsing/identity tests, protocol tests and a release
-APK build. Real Apple TV/Roku connections, Pixel/Samsung notification placement,
+APK build. Real Apple TV/Roku connections, background behavior,
 and physical volume/gesture feel still need hardware testing.
 
 ## GitHub releases and app updates
@@ -155,3 +155,24 @@ this repository existed. Switching signing identities requires reinstalling
 the app unless a signing migration is implemented.
 
 The vendored protocol code and notices are in `android/protocol/`.
+
+## Error tracking
+
+Release builds initialize PostHog for uncaught JavaScript errors, unhandled
+rejections, native crashes, and handled remote-command failures. Native command
+reports contain the operation and error category, without raw native messages.
+App version, build and package metadata let PostHog match uploaded source maps.
+**Settings > Share crash reports** disables reporting. **Test crash reporting**
+sends a nonfatal test error and waits for the upload. Development builds do not
+report until that explicit test is used.
+
+For native crash autocapture, enable **Enable exception autocapture** in the
+PostHog project's error tracking settings. For readable JavaScript stacks, set
+the GitHub Actions repository variable `POSTHOG_CLI_PROJECT_ID` and secret
+`POSTHOG_CLI_API_KEY`. Use a project-restricted key with error tracking write.
+The Metro serializer inserts a chunk ID into the bundle and source map. The
+release workflow installs PostHog CLI and the Gradle hook uploads Hermes maps. Without credentials, builds still work
+and the workflow warns that source maps were skipped. Local release builds use
+the same environment variables, plus a globally installed `@posthog/cli`.
+
+See [PostHog's React Native source map setup](https://posthog.com/docs/error-tracking/upload-source-maps/react-native).

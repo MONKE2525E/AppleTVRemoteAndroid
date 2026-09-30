@@ -9,7 +9,6 @@ import { useAppleTV } from '../appletv/useAppleTV';
 import type { AppleTVDeviceInfo } from '../appletv/types';
 import { PressableScale } from '../components/PressableScale';
 import { TopBar } from '../components/TopBar';
-import { PlaybackPairing } from '../components/PlaybackPairing';
 import { ButtonPad } from '../components/ButtonPad';
 import { TouchSurface } from '../components/TouchSurface';
 import { TransportRow } from '../components/TransportRow';
@@ -175,7 +174,6 @@ export function RemoteScreen() {
             },
           ]}
         >
-          {!connection.airplayPaired && <PlaybackPairing key={connection.device.id} deviceId={connection.device.id} deviceName={connection.device.name} />}
           <TransportRow scale={scale} playback={playback} />
         </View>
       </View>

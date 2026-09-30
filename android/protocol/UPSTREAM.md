@@ -15,7 +15,8 @@ depends on this module but is never depended on by it.
 
 ## Deliberate local adaptations
 
-`src/` has the feedback disconnect callback patch documented below.
+`src/` has the feedback disconnect callback patch documented below and a
+button-release safety patch.
 `build.gradle.kts` remains unchanged from upstream. The
 `kotlin("jvm")` plugin in `build.gradle.kts` resolves against the Kotlin
 Gradle plugin version already on this repo's root `buildscript` classpath
@@ -41,3 +42,12 @@ carried over unmodified from upstream, as required by the Apache-2.0 license
 request fails. Previously the heartbeat silently stopped while the controller
 continued to consider the metadata tunnel connected. The integration layer
 uses the callback to close the old session and retry with backoff.
+
+## Button-release safety patch
+
+`AppleTvRemote.press` delegates to the small `ButtonPress.kt` helper. It attempts
+the HID release in a finally block even when the down acknowledgement fails or
+the coroutine is cancelled while holding a key. Release runs outside cancellation
+with a 1.5-second timeout, and preserves the original error when release also
+fails. `ButtonPressTest` covers cancellation and failed acknowledgements. Retain
+this patch when re-vendoring until upstream guarantees the same behavior.

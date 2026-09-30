@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.facebook.react.bridge.Arguments
+import com.privateremote.appletv.BuildConfig
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.privateremote.appletv.specs.NativeAppSettingsSpec
@@ -12,6 +14,14 @@ import com.privateremote.appletv.specs.NativeAppSettingsSpec
 class AppSettingsModule(context: ReactApplicationContext) : NativeAppSettingsSpec(context) {
     private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
     override fun getName() = NAME
+
+    override fun getAppInfo(promise: Promise) {
+        promise.resolve(Arguments.createMap().apply {
+            putString("version", BuildConfig.VERSION_NAME)
+            putString("build", BuildConfig.VERSION_CODE.toString())
+            putString("namespace", BuildConfig.APPLICATION_ID)
+        })
+    }
 
     override fun canInstallPackages(promise: Promise) {
         promise.resolve(Build.VERSION.SDK_INT < 26 || reactApplicationContext.packageManager.canRequestPackageInstalls())

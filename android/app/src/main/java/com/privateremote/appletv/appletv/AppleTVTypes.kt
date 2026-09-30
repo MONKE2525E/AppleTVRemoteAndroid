@@ -23,6 +23,7 @@ sealed class ConnectionState {
  * so a listener only implements what it cares about.
  */
 interface AppleTVListener {
+    fun onCommandError(operation: String, code: String) {}
     fun onDevicesChanged(devices: List<AppleTvDevice>) {}
     fun onConnectionChanged(state: ConnectionState) {}
     fun onPlaybackChanged(playback: NowPlaying?) {}

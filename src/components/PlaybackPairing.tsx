@@ -43,7 +43,7 @@ export function PlaybackPairing({ deviceId, deviceName }: { deviceId: string; de
   return (
     <>
       <Pressable onPress={start} accessibilityRole="button" style={styles.link}>
-        <Text style={styles.text}>Enable playback details and background controls</Text>
+        <Text style={styles.text}>Enable playback details</Text>
       </Pressable>
       <Modal visible={open} transparent onRequestClose={close}>
         <View style={styles.overlay}>
