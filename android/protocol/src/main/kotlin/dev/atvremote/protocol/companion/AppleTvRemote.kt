@@ -238,9 +238,7 @@ class AppleTvRemote(
 
     /** Press and release a button. */
     suspend fun press(button: Button, holdMs: Long = 0) {
-        hid(button, down = true)
-        if (holdMs > 0) delay(holdMs)
-        hid(button, down = false)
+        pressAndRelease(holdMs) { down -> hid(button, down) }
     }
 
     private suspend fun hid(button: Button, down: Boolean) {
