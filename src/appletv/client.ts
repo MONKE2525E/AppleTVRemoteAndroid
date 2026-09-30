@@ -1,4 +1,5 @@
 import { NativeEventEmitter } from 'react-native';
+import { captureCommandError } from '../analytics/analytics';
 import NativeAppleTV from '../specs/NativeAppleTV';
 import { DEV_FAKE_UI } from './devFakeUi';
 import { appleTVStore } from './store';
@@ -21,6 +22,10 @@ const emitter = new NativeEventEmitter(NativeAppleTV as never);
 // TEMP DEV-ONLY: native AppleTVService events must not clobber the painted
 // fake connected/playback state used for emulator UI work.
 if (!DEV_FAKE_UI) {
+  emitter.addListener('commandError', (payload: Object) => {
+    const error = payload as { operation: string; code: string };
+    captureCommandError(error.operation, error);
+  });
   emitter.addListener('devicesChanged', (payload: Object) => {
     appleTVStore.setDiscovered((payload as { devices: AppleTVDeviceInfo[] }).devices);
   });
@@ -45,10 +50,10 @@ if (!DEV_FAKE_UI) {
 }
 
 /** Swallow native rejections so a missing TV / unbound service never redboxes the remote UI. */
-function soft(promise: Promise<unknown>): Promise<void> {
+function soft(promise: Promise<unknown>, operation = 'remote'): Promise<void> {
   return promise.then(
     () => undefined,
-    () => undefined,
+    error => { captureCommandError(operation, error); },
   );
 }
 
@@ -98,30 +103,30 @@ export const appleTV = {
       appleTVStore.setConnection({ state: 'disconnected' });
       return Promise.resolve();
     }
-    return soft(NativeAppleTV.disconnect());
+    return soft(NativeAppleTV.disconnect(), 'disconnect');
   },
   forgetDevice: (deviceId: string) => {
     appleTVStore.removePairedDevice(deviceId);
     if (DEV_FAKE_UI) return Promise.resolve();
-    return soft(NativeAppleTV.forgetDevice(deviceId));
+    return soft(NativeAppleTV.forgetDevice(deviceId), 'forgetDevice');
   },
 
-  sleep: () => soft(NativeAppleTV.sleep()),
-  wake: (deviceId: string) => soft(NativeAppleTV.wake(deviceId)),
-  setMuted: (muted: boolean) => soft(NativeAppleTV.setMuted(muted)),
-  setVolume: (level: number) => soft(NativeAppleTV.setVolume(level)),
+  sleep: () => soft(NativeAppleTV.sleep(), 'sleep'),
+  wake: (deviceId: string) => soft(NativeAppleTV.wake(deviceId), 'wake'),
+  setMuted: (muted: boolean) => soft(NativeAppleTV.setMuted(muted), 'setMuted'),
+  setVolume: (level: number) => soft(NativeAppleTV.setVolume(level), 'setVolume'),
 
-  pressButton: (name: RemoteButton) => soft(NativeAppleTV.pressButton(name)),
-  holdButton: (name: RemoteButton) => soft(NativeAppleTV.holdButton(name)),
+  pressButton: (name: RemoteButton) => soft(NativeAppleTV.pressButton(name), 'pressButton'),
+  holdButton: (name: RemoteButton) => soft(NativeAppleTV.holdButton(name), 'holdButton'),
   playPause: () => {
     if (DEV_FAKE_UI) {
       appleTVStore.toggleFakePlayback();
       return Promise.resolve();
     }
-    return soft(NativeAppleTV.playPause());
+    return soft(NativeAppleTV.playPause(), 'playPause');
   },
-  skipBy: (seconds: number) => soft(NativeAppleTV.skipBy(seconds)),
-  seekTo: (seconds: number) => soft(NativeAppleTV.seekTo(seconds)),
+  skipBy: (seconds: number) => soft(NativeAppleTV.skipBy(seconds), 'skipBy'),
+  seekTo: (seconds: number) => soft(NativeAppleTV.seekTo(seconds), 'seekTo'),
 
   touchStart: (x: number, y: number) => {
     if (DEV_FAKE_UI) return;
@@ -136,9 +141,9 @@ export const appleTV = {
     NativeAppleTV.touchEnd(x, y);
   },
 
-  sendText: (text: string, clearPrevious: boolean) => soft(NativeAppleTV.sendText(text, clearPrevious)),
-  loadApps: () => soft(NativeAppleTV.loadApps()),
-  launchApp: (bundleId: string) => soft(NativeAppleTV.launchApp(bundleId)),
+  sendText: (text: string, clearPrevious: boolean) => soft(NativeAppleTV.sendText(text, clearPrevious), 'sendText'),
+  loadApps: () => soft(NativeAppleTV.loadApps(), 'loadApps'),
+  launchApp: (bundleId: string) => soft(NativeAppleTV.launchApp(bundleId), 'launchApp'),
 
   getDiagnosticsSnapshot: () =>
     NativeAppleTV.getDiagnosticsSnapshot() as Promise<DiagnosticsSnapshot>,

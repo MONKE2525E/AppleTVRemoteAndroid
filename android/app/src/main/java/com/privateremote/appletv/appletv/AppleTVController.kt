@@ -565,31 +565,12 @@ class AppleTVController(
         }
     }
 
-    /** Read the current level each time so another remote cannot leave our volume stale. */
+    /** Relative keys do not depend on a possibly stale or unavailable absolute level. */
     suspend fun nudgeVolume(up: Boolean) {
-        roku?.let { r -> volumeGate.withLock { r.press(if (up) "VOLUME_UP" else "VOLUME_DOWN") }; return }
         volumeGate.withLock {
-            command {
-                val current = try {
-                    if (lastCapabilities?.volume == false) null else getVolume()?.takeIf { it.isFinite() && it in 0.0..1.0 }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    null
-                }
-                if (current != null) {
-                    val next = (current + if (up) 0.05 else -0.05).coerceIn(0.0, 1.0)
-                    try {
-                        setVolume(next)
-                        return@command
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Absolute volume unavailable; trying volume key", e)
-                    }
-                }
-                press(if (up) Button.VOLUME_UP else Button.VOLUME_DOWN)
-            }
+            val r = roku
+            if (r != null) r.press(if (up) "VOLUME_UP" else "VOLUME_DOWN")
+            else command { press(if (up) Button.VOLUME_UP else Button.VOLUME_DOWN) }
         }
     }
 

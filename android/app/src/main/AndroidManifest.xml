@@ -15,11 +15,8 @@
          surfaces a RedBox the moment any button is tapped. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- AppleTVService: a connectedDevice foreground service, not mediaPlayback.
-         The phone controls playback happening on an external Apple TV; it does
-         not play media itself. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Optional update alerts only; the remote connection posts no notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -55,7 +52,6 @@
 
       <service
         android:name=".appletv.AppleTVService"
-        android:exported="false"
-        android:foregroundServiceType="connectedDevice" />
+        android:exported="false" />
     </application>
 </manifest>

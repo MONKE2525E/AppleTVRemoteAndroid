@@ -18,6 +18,7 @@ class PlaybackWidget : AppWidgetProvider() {
     }
 
     companion object {
+        const val ACTION_PLAY_PAUSE = "com.privateremote.WIDGET_PLAY_PAUSE"
         fun update(context: Context, deviceName: String?, playback: NowPlaying?) {
             val active = playback != null && playback.isActive && playback.playbackState != PlaybackState.STOPPED
             context.getSharedPreferences("playback_widget", Context.MODE_PRIVATE).edit()
@@ -38,8 +39,8 @@ class PlaybackWidget : AppWidgetProvider() {
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), flags)
             val active = prefs.getBoolean("active", false)
             val playing = prefs.getBoolean("playing", false)
-            val action = if (active) PendingIntent.getForegroundService(context, 100,
-                Intent(context, AppleTVService::class.java).setAction(AppleTVService.ACTION_PLAY_PAUSE), flags) else open
+            val action = if (active) PendingIntent.getActivity(context, 100,
+                Intent(context, MainActivity::class.java).setAction(ACTION_PLAY_PAUSE), flags) else open
             for (id in ids) {
                 val views = RemoteViews(context.packageName, R.layout.tv_playback_widget)
                 views.setTextViewText(R.id.widget_device, prefs.getString("device", "TV playback controls"))

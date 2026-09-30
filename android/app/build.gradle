@@ -78,6 +78,11 @@ def updateChannel = new Properties()
 file('../../update-channel.properties').withInputStream { updateChannel.load(it) }
 def releaseStorePath = System.getenv('ANDROID_RELEASE_KEYSTORE')
 
+// Upload Hermes source maps when build-time credentials are configured.
+if (System.getenv('POSTHOG_CLI_API_KEY') && System.getenv('POSTHOG_CLI_PROJECT_ID')) {
+    apply from: file('../../node_modules/posthog-react-native/tooling/posthog.gradle')
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -127,6 +132,7 @@ android {
 dependencies {
     implementation "androidx.work:work-runtime-ktx:2.10.1"
     testImplementation "org.junit.jupiter:junit-jupiter-api:5.10.1"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0"
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.10.1"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.10.1"
     // The version of react-native is set by the React Native Gradle Plugin

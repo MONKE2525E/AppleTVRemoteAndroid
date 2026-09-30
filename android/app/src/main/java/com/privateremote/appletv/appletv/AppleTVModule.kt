@@ -198,17 +198,19 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
 
     // ------------------------------------------------------- AppleTVListener
 
+    override fun onCommandError(operation: String, code: String) {
+        emit("commandError", Arguments.createMap().apply {
+            putString("operation", operation)
+            putString("code", code)
+        })
+    }
+
     override fun onDevicesChanged(devices: List<AppleTvDevice>) {
         emit("devicesChanged", Arguments.createMap().apply { putArray("devices", devices.devicesToWritableArray()) })
     }
 
     override fun onConnectionChanged(state: ConnectionState) {
         emit("connectionChanged", state.toWritableMap())
-        if (state is ConnectionState.Connected) {
-            reactApplicationContext.runOnUiQueueThread {
-                (reactApplicationContext.currentActivity as? com.privateremote.appletv.MainActivity)?.offerBackgroundControls()
-            }
-        }
     }
 
     override fun onPlaybackChanged(playback: NowPlaying?) {

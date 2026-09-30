@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Modal, Pressable, ScrollView, Switch, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { isAnalyticsEnabled, setAnalyticsEnabled, track } from '../analytics/analytics';
+import { isAnalyticsEnabled, setAnalyticsEnabled, sendTestError, track } from '../analytics/analytics';
+import { useAppleTV } from '../appletv/useAppleTV';
+import { PlaybackPairing } from '../components/PlaybackPairing';
 import { COLORS } from '../animations/constants';
 import {
   getPermissionStatus,
@@ -17,7 +19,7 @@ export function openSettings() { openPanel?.(); }
 
 const PERMISSIONS: { id: PermissionId; title: string; detail: string }[] = [
   { id: 'nearby', title: 'Nearby devices', detail: 'Find Apple TVs and Roku TVs on your Wi-Fi.' },
-  { id: 'notifications', title: 'Notifications', detail: 'Now-playing details and pause controls while connected.' },
+  { id: 'notifications', title: 'Update notifications', detail: 'Alerts for new app versions. No connection notifications.' },
   { id: 'install', title: 'Install updates', detail: 'Let this app install new versions you approve.' },
 ];
 
@@ -25,7 +27,6 @@ const AUTOMATIC = [
   'Network access',
   'Wi-Fi multicast (device discovery)',
   'Vibration (button feedback)',
-  'Background connection',
 ];
 
 const INPUT_MODES: { mode: InputMode; label: string }[] = [
@@ -37,7 +38,22 @@ export function SettingsScreen() {
   const [visible, setVisible] = useState(false);
   const [statuses, setStatuses] = useState<Partial<Record<PermissionId, PermissionStatus>>>({});
   const [shareDiagnostics, setShareDiagnostics] = useState(isAnalyticsEnabled());
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const testError = async () => {
+    setTesting(true);
+    setTestStatus(null);
+    try {
+      await sendTestError();
+      setTestStatus('Test report sent. Check PostHog Error Tracking.');
+    } catch (error) {
+      setTestStatus((error as Error).message || 'Could not send the test report.');
+    } finally {
+      setTesting(false);
+    }
+  };
   const inputMode = useInputMode();
+  const { connection } = useAppleTV();
 
   const refresh = useCallback(async () => {
     const entries = await Promise.all(PERMISSIONS.map(async ({ id }) => [id, await getPermissionStatus(id)] as const));
@@ -53,6 +69,7 @@ export function SettingsScreen() {
   useEffect(() => {
     if (!visible) return;
     void refresh();
+    setShareDiagnostics(isAnalyticsEnabled());
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') void refresh();
     });
@@ -93,6 +110,12 @@ export function SettingsScreen() {
               ))}
             </View>
           </View>
+
+          {connection.state === 'connected' && !connection.airplayPaired && (
+            <View style={styles.card}>
+              <PlaybackPairing key={connection.device.id} deviceId={connection.device.id} deviceName={connection.device.name} />
+            </View>
+          )}
 
           <Text style={styles.sectionTitle}>Permissions</Text>
           <View style={styles.card}>
@@ -144,6 +167,14 @@ export function SettingsScreen() {
                 onValueChange={value => { setShareDiagnostics(value); setAnalyticsEnabled(value); }}
               />
             </View>
+          </View>
+
+          <View style={styles.card}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Send test error" disabled={!shareDiagnostics || testing} style={styles.row} onPress={testError}>
+              <Text style={[styles.rowTitle, styles.rowText]}>Test crash reporting</Text>
+              <Text style={styles.link}>{testing ? 'Sending…' : 'Send'}</Text>
+            </Pressable>
+            {testStatus && <Text accessibilityLiveRegion="polite" style={styles.footnote}>{testStatus}</Text>}
           </View>
 
           <Text style={styles.sectionTitle}>App</Text>
