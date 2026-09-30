@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { COLORS } from '../animations/constants';
-import { openAppUpdates } from '../updates/AppUpdates';
+import { openSettings } from '../settings/SettingsScreen';
 import { GEOMETRY } from '../adaptive/geometry';
 import type { AppleTVDeviceInfo } from '../appletv/types';
 import { CircleIconButton } from './CircleIconButton';
@@ -117,7 +117,7 @@ export function TopBar({
           </View>
         ))}
         <AddTvRow scale={scale} onPress={onFindDevices} />
-        <Pressable accessibilityRole="button" onPress={openAppUpdates} style={{ minHeight: GEOMETRY.deviceRowHeight * scale, justifyContent: 'center' }}><Text style={{ color: COLORS.accent, fontSize: 16 * scale }}>App updates</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={openSettings} style={{ minHeight: GEOMETRY.deviceRowHeight * scale, justifyContent: 'center' }}><Text style={{ color: COLORS.accent, fontSize: 16 * scale }}>Settings</Text></Pressable>
       </Animated.View>
     </View>
   );
