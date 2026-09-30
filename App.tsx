@@ -8,7 +8,11 @@ import { StatusBar, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppUpdates } from './src/updates/AppUpdates';
+import { initAnalytics } from './src/analytics/analytics';
+import { SettingsScreen } from './src/settings/SettingsScreen';
 import { RemoteScreen } from './src/remote/RemoteScreen';
+
+void initAnalytics();
 
 function App() {
   return (
@@ -16,6 +20,7 @@ function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" />
         <RemoteScreen />
+        <SettingsScreen />
         <AppUpdates />
       </SafeAreaProvider>
     </GestureHandlerRootView>

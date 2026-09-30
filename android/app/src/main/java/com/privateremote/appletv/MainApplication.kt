@@ -9,6 +9,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.privateremote.appletv.appletv.AppleTVPackage
 import com.privateremote.appletv.fold.FoldStatePackage
 import com.privateremote.appletv.haptics.HapticsPackage
+import com.privateremote.appletv.settings.AppSettingsPackage
 
 import com.privateremote.appletv.updates.AppUpdatesPackage
 import com.privateremote.appletv.updates.UpdateWorker
@@ -26,6 +27,7 @@ class MainApplication : Application(), ReactApplication {
           add(FoldStatePackage())
           add(HapticsPackage())
           add(AppUpdatesPackage())
+          add(AppSettingsPackage())
         },
     )
   }

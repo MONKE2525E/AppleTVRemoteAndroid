@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { GEOMETRY } from '../adaptive/geometry';
+import { track } from '../analytics/analytics';
 import { useAdaptiveLayout } from '../adaptive/useAdaptiveLayout';
 import { COLORS, SELECTOR_SPRING } from '../animations/constants';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -9,15 +10,18 @@ import type { AppleTVDeviceInfo } from '../appletv/types';
 import { PressableScale } from '../components/PressableScale';
 import { TopBar } from '../components/TopBar';
 import { PlaybackPairing } from '../components/PlaybackPairing';
+import { ButtonPad } from '../components/ButtonPad';
 import { TouchSurface } from '../components/TouchSurface';
 import { TransportRow } from '../components/TransportRow';
 import { AddAppleTvModal } from '../components/AddAppleTvModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { DiagnosticsScreen } from '../diagnostics/DiagnosticsScreen';
 import { PairingScreen } from '../pairing/PairingScreen';
+import { useInputMode } from '../settings/preferences';
 
 export function RemoteScreen() {
   const { devices, discovered, connection, playback, capabilities, commands } = useAppleTV();
+  const inputMode = useInputMode();
   const layout = useAdaptiveLayout();
   const { scale, contentRect } = layout;
 
@@ -43,6 +47,12 @@ export function RemoteScreen() {
   useEffect(() => {
     setSelectorOpen(false);
   }, [connection.state]);
+
+  const connectedKind =
+    connection.state === 'connected' ? (connection.device.model?.startsWith('Roku ') ? 'roku' : 'apple_tv') : null;
+  useEffect(() => {
+    if (connectedKind) track('device_connected', { kind: connectedKind });
+  }, [connectedKind]);
 
   const listHeight = (Math.max(1, devices.length) + 2) * GEOMETRY.deviceRowHeight * scale;
 
@@ -131,7 +141,16 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
-          {padHeight > 0 && (
+          {padHeight > 0 && (inputMode === 'buttons' ? (
+            <ButtonPad
+              width={touchSurfaceWidth}
+              height={padHeight}
+              scale={scale}
+              showContextualIcons={hasNowPlaying}
+              onSkipBack={() => commands.skipBy(-10)}
+              onSkipForward={() => commands.skipBy(10)}
+            />
+          ) : (
             <TouchSurface
               width={touchSurfaceWidth}
               height={padHeight}
@@ -141,7 +160,7 @@ export function RemoteScreen() {
               onSkipBack={() => commands.skipBy(-10)}
               onSkipForward={() => commands.skipBy(10)}
             />
-          )}
+          ))}
         </View>
 
         <View

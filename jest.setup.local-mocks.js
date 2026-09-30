@@ -4,3 +4,4 @@ jest.mock('./src/specs/NativeAppleTV');
 jest.mock('./src/specs/NativeFoldState');
 jest.mock('./src/specs/NativeHaptics');
 jest.mock('./src/specs/NativeAppUpdates');
+jest.mock('./src/specs/NativeAppSettings');

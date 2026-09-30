@@ -4,7 +4,7 @@ import { COLORS } from '../animations/constants';
 import { PressableScale } from '../components/PressableScale';
 import { TVIcon } from '../components/icons/Icons';
 import { requestDiscoveryPermission } from '../appletv/permissions';
-import { openAppUpdates } from '../updates/AppUpdates';
+import { openSettings } from '../settings/SettingsScreen';
 import { useAppleTV } from '../appletv/useAppleTV';
 import type { AppleTVDeviceInfo, ConnectionState } from '../appletv/types';
 
@@ -128,7 +128,7 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Apple TVs and Roku TVs on your network</Text>
-      <Pressable accessibilityRole="button" onPress={openAppUpdates} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>App updates</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={openSettings} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Settings</Text></Pressable>
       {appleTvs.length === 0 && (
         <View style={styles.searching}>
           <ActivityIndicator color={COLORS.icon} />
