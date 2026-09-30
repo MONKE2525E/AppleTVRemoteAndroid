@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import NativeAppUpdates from '../specs/NativeAppUpdates';
 import { COLORS } from '../animations/constants';
 
@@ -34,10 +34,13 @@ export function AppUpdates() {
   useEffect(() => {
     openPanel = () => { void check(true); };
     void check(false);
+    const handleLink = (url: string | null) => { if (url === 'tvremote://updates') void check(true); };
+    void Linking.getInitialURL().then(handleLink);
+    const links = Linking.addEventListener('url', event => handleLink(event.url));
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') void check(false);
     });
-    return () => { openPanel = undefined; subscription.remove(); };
+    return () => { openPanel = undefined; subscription.remove(); links.remove(); };
   }, [check]);
   const install = async () => {
     if (!status?.versionCode || busy) return;
