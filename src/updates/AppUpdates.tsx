@@ -75,7 +75,7 @@ export function AppUpdates() {
 }
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: '#0009', justifyContent: 'center', padding: 24 },
-  panel: { backgroundColor: COLORS.controlFill, borderRadius: 20, maxHeight: '90%', flexGrow: 0 },
+  panel: { backgroundColor: '#1C1C1E', borderRadius: 20, maxHeight: '90%', flexGrow: 0 },
   content: { padding: 24, gap: 16 },
   title: { color: COLORS.icon, fontSize: 22, fontWeight: '600' },
   text: { color: COLORS.textSecondary, fontSize: 16, lineHeight: 23 },
