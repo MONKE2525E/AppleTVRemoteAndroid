@@ -1,0 +1,18 @@
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const path = require('node:path');
+const properties = filename => Object.fromEntries(fs.readFileSync(filename, 'utf8').trim().split(/\r?\n/).filter(line => line && !line.startsWith('#')).map(line => line.split('=')));
+const version = properties('version.properties');
+const repository = properties('update-channel.properties').GITHUB_REPOSITORY;
+const versionCode = Number(version.VERSION_CODE);
+const versionName = version.VERSION_NAME;
+if (!Number.isSafeInteger(versionCode) || versionCode <= 0 || !/^\d+\.\d+\.\d+$/.test(versionName)) throw new Error('Invalid release version');
+if (process.env.GITHUB_REPOSITORY && repository !== process.env.GITHUB_REPOSITORY) throw new Error('Update repository does not match release repository');
+const directory = process.argv[2] || 'dist';
+fs.mkdirSync(directory, { recursive: true });
+const apk = fs.readFileSync('android/app/build/outputs/apk/release/app-release.apk');
+const sha256 = crypto.createHash('sha256').update(apk).digest('hex');
+fs.writeFileSync(path.join(directory, 'TVRemote.apk'), apk);
+fs.writeFileSync(path.join(directory, 'update.json'), JSON.stringify({versionCode, versionName, apkUrl: `https://github.com/${repository}/releases/download/v${versionName}/TVRemote.apk`, sha256, size: apk.length}, null, 2) + '\n');
+fs.writeFileSync(path.join(directory, 'SHA256SUMS'), `${sha256}  TVRemote.apk\n`);
+console.log(`v${versionName}`);

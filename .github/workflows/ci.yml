@@ -1,0 +1,31 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager "platforms;android-36" "build-tools;36.1.0" "ndk;27.1.12297006"
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - name: Native tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest :protocol:test --no-daemon --max-workers=2

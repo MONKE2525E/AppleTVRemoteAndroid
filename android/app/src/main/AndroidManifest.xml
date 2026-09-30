@@ -1,0 +1,61 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- NSD / mDNS on Android 13+ (targetSdk 36). neverForLocation so we don't
+         need the location runtime prompt just to find Apple TVs. -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <!-- PressableScale / HapticsModule fire a short vibrator pulse on every
+         control press. Without this, Android throws SecurityException and RN
+         surfaces a RedBox the moment any button is tapped. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- AppleTVService: a connectedDevice foreground service, not mediaPlayback.
+         The phone controls playback happening on an external Apple TV; it does
+         not play media itself. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+      android:name=".MainApplication"
+      android:label="@string/app_name"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:allowBackup="false"
+      android:theme="@style/AppTheme"
+      android:usesCleartextTraffic="true"
+      android:supportsRtl="true">
+      <activity
+        android:name=".MainActivity"
+        android:label="@string/app_name"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+        android:launchMode="singleTask"
+        android:windowSoftInputMode="adjustResize"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity>
+
+      <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
+        <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
+      </provider>
+
+      <receiver android:name=".appletv.PlaybackWidget" android:exported="true" android:label="TV playback controls">
+        <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+        <meta-data android:name="android.appwidget.provider" android:resource="@xml/tv_playback_widget_info" />
+      </receiver>
+
+      <service
+        android:name=".appletv.AppleTVService"
+        android:exported="false"
+        android:foregroundServiceType="connectedDevice" />
+    </application>
+</manifest>
