@@ -34,8 +34,8 @@ export function AppUpdates() {
   useEffect(() => {
     openPanel = () => { void check(true); };
     void check(false);
-    const handleLink = (url: string | null) => { if (url === 'tvremote://updates') void check(true); };
-    void Linking.getInitialURL().then(handleLink);
+    const handleLink = (url: string | null | undefined) => { if (url === 'tvremote://updates') void check(true); };
+    void Linking.getInitialURL().then(handleLink).catch(() => {});
     const links = Linking.addEventListener('url', event => handleLink(event.url));
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') void check(false);
