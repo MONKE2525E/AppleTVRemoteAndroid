@@ -166,3 +166,19 @@ export function FindIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps
     </Svg>
   );
 }
+
+/** SF Symbol-style `keyboard`: rounded body, key rows, and a space bar. */
+export function KeyboardIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="2.6" y="5.6" width="18.8" height="12.8" rx="3" stroke={color} strokeWidth={1.65} fill="none" />
+      <Path
+        d="M6.6 9.6h.01M10.2 9.6h.01M13.8 9.6h.01M17.4 9.6h.01M6.6 12.6h.01M10.2 12.6h.01M13.8 12.6h.01M17.4 12.6h.01"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Path d="M8.4 15.6h7.2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}

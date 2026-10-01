@@ -1,6 +1,11 @@
 name: Publish release
 on:
   workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Publish as a pre-release (never becomes the latest release or reaches the in-app updater)
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -61,12 +66,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "This version already has a release. Increase VERSION_CODE and VERSION_NAME."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" dist/TVRemote.apk dist/update.json dist/SHA256SUMS --target "$GITHUB_SHA" --title "TV Remote $RELEASE_TAG" --generate-notes --latest
+          if [ "$PRERELEASE" = "true" ]; then
+            CHANNEL="--prerelease --latest=false"
+          else
+            CHANNEL="--latest"
+          fi
+          gh release create "$RELEASE_TAG" dist/TVRemote.apk dist/update.json dist/SHA256SUMS --target "$GITHUB_SHA" --title "TV Remote $RELEASE_TAG" --generate-notes $CHANNEL
       - name: Remove signing key
         if: always()
         run: rm -f "$ANDROID_RELEASE_KEYSTORE"
