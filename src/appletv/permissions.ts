@@ -33,8 +33,8 @@ const RUNTIME: Record<'nearby' | 'notifications', { permission: AndroidPermissio
   },
   notifications: {
     permission: 'android.permission.POST_NOTIFICATIONS' as AndroidPermission,
-    title: 'App updates',
-    message: 'Notifications alert you when a new app version is available.',
+    title: 'Notifications',
+    message: 'Show playback controls while something is playing, and alert you to new app versions.',
   },
 };
 

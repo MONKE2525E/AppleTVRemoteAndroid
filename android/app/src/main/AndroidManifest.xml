@@ -16,8 +16,14 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
 
-    <!-- Optional update alerts only; the remote connection posts no notifications. -->
+    <!-- Playback notification: a connectedDevice foreground service that only
+         runs while something is playing on the TV (the phone controls
+         playback, it does not play media itself), plus update alerts. The
+         remote connection on its own posts no notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <application
       android:name=".MainApplication"
@@ -52,6 +58,7 @@
 
       <service
         android:name=".appletv.AppleTVService"
-        android:exported="false" />
+        android:exported="false"
+        android:foregroundServiceType="connectedDevice" />
     </application>
 </manifest>
