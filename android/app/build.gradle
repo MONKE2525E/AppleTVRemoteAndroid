@@ -84,6 +84,7 @@ if (System.getenv('POSTHOG_CLI_API_KEY') && System.getenv('POSTHOG_CLI_PROJECT_I
 }
 
 android {
+    testBuildType project.findProperty('testBuildType') ?: 'debug'
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -96,6 +97,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersion.getProperty('VERSION_CODE').toInteger()
         versionName appVersion.getProperty('VERSION_NAME')
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "UPDATE_REPOSITORY", '"' + updateChannel.getProperty('GITHUB_REPOSITORY') + '"'
     }
     signingConfigs {
@@ -130,6 +132,7 @@ android {
 }
 
 dependencies {
+    androidTestImplementation "androidx.test:runner:1.6.2"
     implementation "androidx.work:work-runtime-ktx:2.10.1"
     testImplementation "org.junit.jupiter:junit-jupiter-api:5.10.1"
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0"
