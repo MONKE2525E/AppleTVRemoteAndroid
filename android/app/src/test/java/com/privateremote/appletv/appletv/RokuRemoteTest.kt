@@ -3,8 +3,14 @@ package com.privateremote.appletv.appletv
 import dev.atvremote.protocol.mrp.PlaybackState
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.io.IOException
 
 class RokuRemoteTest {
+    @Test fun `document types cannot introduce entities into Roku responses`() {
+        val xml = "<!DOCTYPE device-info [<!ENTITY serial 'injected'>]><device-info><serial-number>&serial;</serial-number></device-info>"
+        assertThrows(IOException::class.java) { RokuRemote.parseDevice(xml, "192.168.1.10") }
+    }
+
     @Test fun `Roku playback state and millisecond timing match ECP responses`() {
         val playing = RokuRemote.parsePlayback("""
             <player state="play"><plugin name="Example channel"/><position>12000 ms</position><duration>60000 ms</duration></player>

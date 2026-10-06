@@ -2,6 +2,7 @@ package com.privateremote.appletv.appletv
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.util.Log
 import dev.atvremote.protocol.discovery.AppleTvDevice
 import dev.atvremote.protocol.mrp.NowPlaying
 import dev.atvremote.protocol.mrp.PlaybackState
@@ -74,8 +75,12 @@ class RokuRemote(private val device: AppleTvDevice) {
 
     companion object {
         private fun xml(text: String): Element {
+            // Android's DOM factory does not support Xerces' disallow-doctype-decl feature.
+            // Reject DTDs before parsing so entity declarations remain forbidden on both runtimes.
+            if (text.contains("<!DOCTYPE", ignoreCase = true)) {
+                throw IOException("Roku XML must not contain a document type")
+            }
             val factory = DocumentBuilderFactory.newInstance()
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
             return factory.newDocumentBuilder().parse(ByteArrayInputStream(text.toByteArray())).documentElement
         }
 
@@ -144,7 +149,7 @@ class RokuDiscovery(context: Context) {
                 val probe = AppleTvDevice("Roku", address, 8060, identifier = "roku:probe")
                 try { onResolved(RokuRemote(probe).verify()) }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (_: Exception) { }
+                catch (e: Exception) { Log.w("RokuDiscovery", "Roku discovery probe failed", e) }
             }
         } finally {
             if (multicast.isHeld) multicast.release()
