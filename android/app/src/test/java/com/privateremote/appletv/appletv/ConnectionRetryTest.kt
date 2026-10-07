@@ -92,6 +92,39 @@ class ConnectionRetryTest {
         assertEquals(0L, testScheduler.currentTime)
     }
 
+    @Test fun `permanent Roku HTTP statuses stop without backoff or discovery refresh`() = runTest {
+        for (status in listOf(301, 400, 401, 403, 404, 501, 505, 506, 508, 510, 511)) {
+            var attempts = 0
+            var refreshes = 0
+            val failure = RokuHttpException(status, "Roku returned HTTP $status")
+            try {
+                retryConnection(beforeRetry = { refreshes++ }) { attempts++; throw failure }
+                fail<Unit>("Expected HTTP $status failure")
+            } catch (e: RokuHttpException) {
+                assertSame(failure, e)
+            }
+            assertEquals(1, attempts, "HTTP $status attempts")
+            assertEquals(0, refreshes, "HTTP $status discovery refreshes")
+            assertEquals(0L, testScheduler.currentTime, "HTTP $status backoff")
+        }
+    }
+
+    @Test fun `temporary Roku HTTP statuses retry`() = runTest {
+        for (status in listOf(408, 429, 500, 502, 503, 504, 507, 598, 599)) {
+            var attempts = 0
+            var refreshes = 0
+            val startTime = testScheduler.currentTime
+            val result = retryConnection(beforeRetry = { refreshes++ }) {
+                if (++attempts == 1) throw RokuHttpException(status, "Roku returned HTTP $status")
+                "connected"
+            }
+            assertEquals("connected", result, "HTTP $status result")
+            assertEquals(2, attempts, "HTTP $status attempts")
+            assertEquals(1, refreshes, "HTTP $status discovery refreshes")
+            assertEquals(startTime + 1000L, testScheduler.currentTime, "HTTP $status backoff")
+        }
+    }
+
     @Test fun `cancelling during backoff prevents further connections`() = runTest {
         var attempts = 0
         var refreshes = 0
