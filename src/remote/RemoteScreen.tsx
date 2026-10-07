@@ -118,6 +118,8 @@ export function RemoteScreen() {
   return (
     <View style={styles.root}>
       <View
+        importantForAccessibility={drawerOpen ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={drawerOpen}
         style={[
           styles.content,
           { left: contentRect.x, top: contentRect.y, width: contentRect.width, height: contentRect.height },
@@ -135,6 +137,8 @@ export function RemoteScreen() {
         {/* Click-away for the device list; the pill and list sit above it. */}
         <Animated.View
           pointerEvents={selectorOpen ? 'auto' : 'none'}
+          importantForAccessibility={selectorOpen ? 'auto' : 'no-hide-descendants'}
+          accessibilityElementsHidden={!selectorOpen}
           style={[styles.selectorScrim, selectorScrimStyle]}
         >
           <Pressable

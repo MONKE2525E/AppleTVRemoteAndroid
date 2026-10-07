@@ -72,7 +72,12 @@ export function TopBar({
           },
         ]}
       >
-        <Animated.View style={[sideButtonStyle, styles.side]} pointerEvents={selectorOpen ? 'none' : 'auto'}>
+        <Animated.View
+          style={[sideButtonStyle, styles.side]}
+          pointerEvents={selectorOpen ? 'none' : 'auto'}
+          importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={selectorOpen}
+        >
           <CircleIconButton size={rowSize} onPress={onToggleMute} accessibilityLabel={muted ? 'Unmute' : 'Mute'}>
             <MuteIcon size={rowSize * 0.4} />
           </CircleIconButton>
@@ -80,7 +85,12 @@ export function TopBar({
 
         <DeviceSelectorPill label={label} progress={progress} scale={scale} onPress={onToggleSelector} />
 
-        <Animated.View style={[sideButtonStyle, styles.side]} pointerEvents={selectorOpen ? 'none' : 'auto'}>
+        <Animated.View
+          style={[sideButtonStyle, styles.side]}
+          pointerEvents={selectorOpen ? 'none' : 'auto'}
+          importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={selectorOpen}
+        >
           <CircleIconButton size={rowSize} onPress={onPower} accessibilityLabel="Power">
             <PowerIcon size={rowSize * 0.4} />
           </CircleIconButton>
@@ -97,6 +107,8 @@ export function TopBar({
           listStyle,
         ]}
         pointerEvents={selectorOpen ? 'auto' : 'none'}
+        importantForAccessibility={selectorOpen ? 'auto' : 'no-hide-descendants'}
+        accessibilityElementsHidden={!selectorOpen}
       >
         {devices.map(device => (
           <View

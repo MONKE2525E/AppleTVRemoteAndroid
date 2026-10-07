@@ -5,6 +5,8 @@ import type { SharedValue } from 'react-native-reanimated';
 import { AppDrawer } from '../src/components/AppDrawer';
 import { PadOverlay } from '../src/components/PadOverlay';
 import { PressableScale } from '../src/components/PressableScale';
+import { TopBar } from '../src/components/TopBar';
+import { RemoteScreen } from '../src/remote/RemoteScreen';
 import { appleTVStore } from '../src/appletv/store';
 import { appleTV } from '../src/appletv/client';
 import type { AppleTVDeviceInfo } from '../src/appletv/types';
@@ -16,6 +18,7 @@ jest.mock('react-native-gesture-handler', () => ({
 
 jest.mock('react-native-reanimated', () => {
   const ReactNative = jest.requireActual('react-native');
+  const React = jest.requireActual('react');
   const entrance = {
     delay: () => entrance,
     duration: () => entrance,
@@ -34,7 +37,7 @@ jest.mock('react-native-reanimated', () => {
     cancelAnimation: jest.fn(),
     interpolate: () => 0,
     useAnimatedStyle: (callback: () => unknown) => callback(),
-    useSharedValue: (value: unknown) => ({ value }),
+    useSharedValue: (value: unknown) => React.useRef({ value }).current,
     withRepeat: (animation: unknown) => animation,
     withSpring: (value: unknown) => value,
     withTiming: (value: unknown) => value,
@@ -118,6 +121,48 @@ test('the closed drawer hides the sheet and scrim from accessibility until it op
     expect(node.props.accessibilityElementsHidden).toBe(true);
   }
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('remote controls and selector controls follow the visible overlay state', async () => {
+  const previous = appleTVStore.getSnapshot().connection;
+  appleTVStore.setConnection({ state: 'connected', device, airplayPaired: true });
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(safeArea(<RemoteScreen />)); });
+  const containerFor = (node: ReactTestRenderer.ReactTestInstance) => {
+    let parent = node.parent;
+    while (parent && parent.props.accessibilityElementsHidden == null) parent = parent.parent;
+    if (!parent) throw new Error('Accessibility container missing');
+    return parent;
+  };
+  const expectHidden = (node: ReactTestRenderer.ReactTestInstance, hidden: boolean) => {
+    expect(node.props.accessibilityElementsHidden).toBe(hidden);
+    expect(node.props.importantForAccessibility).toBe(hidden ? 'no-hide-descendants' : 'auto');
+  };
+  const topBar = () => renderer.root.findByType(TopBar);
+  const selectorScrim = () => containerFor(renderer.root.findByProps({ accessibilityLabel: 'Close device list' }));
+  const selectorList = () => containerFor(renderer.root.findAllByProps({ accessibilityLabel: 'Add Apple TV' })[0]);
+  expectHidden(containerFor(topBar()), false);
+  expectHidden(selectorScrim(), true);
+  expectHidden(selectorList(), true);
+  await ReactTestRenderer.act(() => topBar().props.onToggleSelector());
+  expectHidden(selectorScrim(), false);
+  expectHidden(selectorList(), false);
+  for (const label of ['Mute', 'Power']) {
+    expectHidden(containerFor(renderer.root.findAllByProps({ accessibilityLabel: label })[0]), true);
+  }
+  await ReactTestRenderer.act(() => topBar().props.onToggleSelector());
+  expectHidden(selectorScrim(), true);
+  expectHidden(selectorList(), true);
+  for (const label of ['Mute', 'Power']) {
+    expectHidden(containerFor(renderer.root.findAllByProps({ accessibilityLabel: label })[0]), false);
+  }
+  await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(true));
+  expectHidden(containerFor(topBar()), true);
+  expect(renderer.root.findByType(AppDrawer).props.open).toBe(true);
+  await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(false));
+  expectHidden(containerFor(topBar()), false);
+  await ReactTestRenderer.act(() => renderer.unmount());
+  appleTVStore.setConnection(previous);
 });
 
 test('a cancelled handle pull settles closed once, while a successful release keeps its chosen state', async () => {
