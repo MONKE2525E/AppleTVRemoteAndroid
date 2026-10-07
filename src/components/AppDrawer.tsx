@@ -159,7 +159,7 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
   const padding = 20 * scale;
   // Floor so float rounding can never push the last column onto the next row.
   const tileWidth = Math.max(0, Math.floor((width - padding * 2 - gap * (COLUMNS - 1)) / COLUMNS));
-  const showGrid = apps.length > 0;
+  const showGrid = apps.length > 0 && loadState !== 'error';
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>

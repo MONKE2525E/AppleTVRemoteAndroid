@@ -6,6 +6,7 @@ import { AppDrawer } from '../src/components/AppDrawer';
 import { PadOverlay } from '../src/components/PadOverlay';
 import { PressableScale } from '../src/components/PressableScale';
 import { appleTVStore } from '../src/appletv/store';
+import { appleTV } from '../src/appletv/client';
 import type { AppleTVDeviceInfo } from '../src/appletv/types';
 
 jest.mock('react-native-gesture-handler', () => ({
@@ -63,6 +64,33 @@ const safeArea = (children: React.ReactNode) => (
 afterEach(() => {
   appleTVStore.setApps([]);
   jest.restoreAllMocks();
+});
+
+test('a failed refresh hides cached apps and offers a retry that restores the grid', async () => {
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  const load = jest.spyOn(appleTV, 'loadApps').mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  const drawer = (active: boolean) => safeArea(
+    <AppDrawer open active={active} progress={{ value: 1 } as SharedValue<number>}
+      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+  );
+
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(true)); });
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' }).length).toBeGreaterThan(0);
+  await ReactTestRenderer.act(() => renderer.update(drawer(false)));
+  await ReactTestRenderer.act(() => renderer.update(drawer(true)));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(appleTVStore.getSnapshot().apps).toHaveLength(1);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' })).toHaveLength(0);
+  expect(JSON.stringify(renderer.toJSON())).toContain("Couldn't load apps from ");
+
+  const retry = renderer.root.findByType(PressableScale);
+  expect(retry.props.accessibilityLabel).toBe('Retry loading apps');
+  await ReactTestRenderer.act(() => retry.props.onPress());
+  expect(load).toHaveBeenCalledTimes(3);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Retry loading apps' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' }).length).toBeGreaterThan(0);
+  await ReactTestRenderer.act(() => renderer.unmount());
 });
 
 test('a cancelled handle pull settles closed once, while a successful release keeps its chosen state', async () => {
