@@ -626,8 +626,10 @@ class AppleTVController(
     }
 
     suspend fun loadApps() {
-        val apps = roku?.apps() ?: command { listApps() }
-        listener?.onAppsChanged(apps)
+        val device = currentDevice ?: throw IllegalStateException("Not connected")
+        val currentRoku = roku
+        val apps = currentRoku?.apps() ?: command { listApps() }
+        listener?.onAppsChanged(device.credentialKey, apps)
     }
 
     suspend fun launchApp(bundleId: String) {

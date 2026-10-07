@@ -243,7 +243,10 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
         )
     }
 
-    override fun onAppsChanged(apps: List<AppInfo>) {
-        emit("appsChanged", Arguments.createMap().apply { putArray("apps", apps.appsToWritableArray()) })
+    override fun onAppsChanged(deviceId: String, apps: List<AppInfo>) {
+        emit("appsChanged", Arguments.createMap().apply {
+            putString("deviceId", deviceId)
+            putArray("apps", apps.appsToWritableArray())
+        })
     }
 }

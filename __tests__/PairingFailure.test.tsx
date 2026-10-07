@@ -2,14 +2,17 @@ import ReactTestRenderer from 'react-test-renderer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NativeAppleTV from '../src/specs/NativeAppleTV';
 import { PairingScreen } from '../src/pairing/PairingScreen';
-import type { ConnectionState } from '../src/appletv/types';
+import { appleTVStore } from '../src/appletv/store';
+import { useAppleTV } from '../src/appletv/useAppleTV';
+import type { AppleTVDeviceInfo, ConnectionState } from '../src/appletv/types';
 
 jest.mock('react-native-gesture-handler', () => ({
   ...jest.requireActual('react-native-gesture-handler'),
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-const roku = { id: 'roku:1', name: 'Bedroom Roku', address: '192.168.0.198', port: 8060, model: 'Roku TV', identifier: 'roku:1' };
+const roku: AppleTVDeviceInfo = { id: 'roku:1', name: 'Bedroom Roku', address: '192.168.0.198', port: 8060, model: 'Roku TV', identifier: 'roku:1' };
+const otherTv: AppleTVDeviceInfo = { id: 'tv:other', name: 'Living Room Apple TV', address: '192.168.0.50', port: 7000, model: 'AppleTV6,2', identifier: null };
 const failed: ConnectionState = {
   state: 'failed',
   device: roku,
@@ -22,6 +25,18 @@ const texts = (renderer: ReactTestRenderer.ReactTestRenderer) =>
   renderer.root.findAll(node => typeof node.props.children === 'string').map(node => node.props.children as string);
 const press = (renderer: ReactTestRenderer.ReactTestRenderer, label: string) =>
   renderer.root.find(node => node.props.accessibilityLabel === label && typeof node.props.onPress === 'function').props.onPress();
+
+function StoreBackedPairingScreen() {
+  const { devices, connection } = useAppleTV();
+  return <PairingScreen devices={devices} connection={connection} />;
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  appleTVStore.setDevices([]);
+  appleTVStore.setApps([]);
+  appleTVStore.setConnection({ state: 'disconnected' });
+});
 
 test('an unreachable TV can be skipped or forgotten instead of only retried', async () => {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -37,6 +52,29 @@ test('an unreachable TV can be skipped or forgotten instead of only retried', as
     expect.arrayContaining(['Apple TVs and Roku TVs on your network', 'Back to Bedroom Roku']),
   );
   expect(NativeAppleTV.startDiscovery).toHaveBeenCalled();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('forgetting a failed noncurrent TV returns to browsing without offering to reopen it', async () => {
+  appleTVStore.setDevices([otherTv, roku]);
+  appleTVStore.setConnection(failed);
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><StoreBackedPairingScreen /></GestureHandlerRootView>,
+    );
+  });
+
+  await ReactTestRenderer.act(() => press(renderer, 'Forget Bedroom Roku'));
+
+  expect(NativeAppleTV.forgetDevice).toHaveBeenCalledWith(roku.id);
+  expect(texts(renderer)).toEqual(expect.arrayContaining(['Apple TVs and Roku TVs on your network']));
+  expect(texts(renderer)).not.toContain('Back to Bedroom Roku');
+  expect(appleTVStore.getSnapshot().connection).toEqual({ state: 'disconnected' });
+  expect(appleTVStore.getSnapshot().devices).toEqual([otherTv]);
+  expect(NativeAppleTV.disconnect).not.toHaveBeenCalled();
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });

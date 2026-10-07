@@ -45,7 +45,8 @@ if (!DEV_FAKE_UI) {
     appleTVStore.setTextInput(payload as TextInputInfo);
   });
   emitter.addListener('appsChanged', (payload: Object) => {
-    appleTVStore.setApps((payload as { apps: AppInfo[] }).apps);
+    const { deviceId, apps } = payload as { deviceId: string; apps: AppInfo[] };
+    appleTVStore.setAppsForDevice(deviceId, apps);
   });
 }
 

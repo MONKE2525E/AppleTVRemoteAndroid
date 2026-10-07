@@ -29,5 +29,5 @@ interface AppleTVListener {
     fun onPlaybackChanged(playback: NowPlaying?) {}
     fun onCapabilitiesChanged(capabilities: MediaCapabilities) {}
     fun onTextInputRequested(current: String?, focused: Boolean) {}
-    fun onAppsChanged(apps: List<AppInfo>) {}
+    fun onAppsChanged(deviceId: String, apps: List<AppInfo>) {}
 }

@@ -136,6 +136,12 @@ class AppleTVStore {
   setCapabilities(capabilities: CapabilitiesInfo) { this.set({ capabilities }); }
   setTextInput(textInput: TextInputInfo) { this.set({ textInput }); }
   setApps(apps: AppInfo[]) { this.set({ apps }); }
+  setAppsForDevice(deviceId: string, apps: AppInfo[]) {
+    const connection = this.state.connection;
+    if (connection.state !== 'connected' || connection.device.id !== deviceId) return false;
+    this.set({ apps });
+    return true;
+  }
 
   /** TEMP DEV-ONLY: flip fake now-playing so the contextual icon row can be verified. */
   toggleFakePlayback() {
@@ -180,6 +186,13 @@ class AppleTVStore {
         playback: next ? this.state.playback : null,
         apps: [],
       });
+      return;
+    }
+    const failed = this.state.connection.state === 'failed' ? this.state.connection.device : null;
+    if (failed?.id === deviceId) {
+      // A failed reconnect target is not the native connection: forget it
+      // locally without disconnecting a different TV that may still be live.
+      this.set({ devices, connection: { state: 'disconnected' }, apps: [] });
       return;
     }
     this.set({ devices });

@@ -31,10 +31,11 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
   const [browseError, setBrowseError] = useState<string | null>(null);
   // Lets the user leave a failed reconnect to pick another TV without forgetting this one.
   const [browseInstead, setBrowseInstead] = useState(false);
+  const failedDeviceId = connection.state === 'failed' ? connection.device?.id ?? null : null;
 
   useEffect(() => {
     setBrowseInstead(false);
-  }, [connection.state]);
+  }, [connection.state, failedDeviceId]);
 
   const appleTvs = useMemo(
     () => devices.filter(d => !d.model || d.model.startsWith('AppleTV') || !d.model.startsWith('AudioAccessory')),
@@ -86,7 +87,14 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
           <Text style={styles.secondaryButtonLabel}>Choose another TV</Text>
         </PressableScale>
         {device && (
-          <PressableScale style={styles.secondaryButton} onPress={() => commands.forgetDevice(device.id)}>
+          <PressableScale
+            accessibilityLabel={`Forget ${device.name}`}
+            style={styles.secondaryButton}
+            onPress={() => {
+              commands.startDiscovery();
+              commands.forgetDevice(device.id);
+            }}
+          >
             <Text style={[styles.secondaryButtonLabel, !stalePairing && styles.destructiveLabel]}>
               {stalePairing ? 'Forget & Re-pair' : `Forget ${device.name}`}
             </Text>
