@@ -65,6 +65,14 @@ export interface DiagnosticsSnapshot {
   /** From Media3PlaybackAdapter.kt -- the session is a projection of AppleTVController's state, not a second state machine. */
   media3Active: boolean;
   media3PlayWhenReady: boolean;
+  playbackForeground?: boolean;
+  playbackForegroundDeferred?: boolean;
+  liveUpdateError?: string | null;
+  notificationsEnabled?: boolean;
+  systemMediaNotification?: boolean;
+  liveUpdatesSupported?: boolean;
+  liveUpdatesAllowed?: boolean;
+  liveUpdatePromoted?: boolean;
 }
 
 export type RemoteButton =
@@ -77,6 +85,8 @@ export type RemoteButton =
   | 'SELECT'
   | 'HOME'
   | 'TV'
+  | 'REWIND'
+  | 'FAST_FORWARD'
   | 'PLAY_PAUSE'
   | 'VOLUME_UP'
   | 'VOLUME_DOWN'

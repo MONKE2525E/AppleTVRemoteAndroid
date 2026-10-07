@@ -1,6 +1,7 @@
 package com.privateremote.appletv.settings
 
 import android.content.Context
+import android.app.NotificationManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -49,6 +50,19 @@ class AppSettingsModule(context: ReactApplicationContext) : NativeAppSettingsSpe
 
     override fun openAppSettings() {
         launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${reactApplicationContext.packageName}")))
+    }
+
+    override fun canPostLiveUpdates(promise: Promise) {
+        promise.resolve(Build.VERSION.SDK_INT >= 36 && reactApplicationContext.getSystemService(NotificationManager::class.java).canPostPromotedNotifications())
+    }
+
+    override fun openLiveUpdateSettings() {
+        val intent = Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
+            .putExtra(Settings.EXTRA_APP_PACKAGE, reactApplicationContext.packageName)
+        if (Build.VERSION.SDK_INT >= 36) {
+            try { launch(intent) }
+            catch (_: android.content.ActivityNotFoundException) { openAppSettings() }
+        } else openAppSettings()
     }
 
     override fun getPreference(key: String, promise: Promise) {

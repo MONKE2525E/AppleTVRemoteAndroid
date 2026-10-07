@@ -15,6 +15,7 @@ interface TouchSurfaceProps {
   borderRadius: number;
   scale: number;
   showContextualIcons: boolean;
+  transportKeys?: boolean;
   onSkipBack: () => void;
   onSkipForward: () => void;
 }
@@ -31,6 +32,7 @@ export function TouchSurface({
   borderRadius,
   scale,
   showContextualIcons,
+  transportKeys = false,
   onSkipBack,
   onSkipForward,
 }: TouchSurfaceProps) {
@@ -129,10 +131,10 @@ export function TouchSurface({
           pointerEvents="none"
           style={[styles.iconRow, iconRowStyle, { height: iconBandHeight, paddingBottom: bottomInset }]}
         >
-          <SkipIcon size={iconSize} direction="back" />
-          <InfoIcon size={iconSize} />
-          <CaptionsIcon size={iconSize} />
-          <SkipIcon size={iconSize} direction="forward" />
+          <SkipIcon size={iconSize} direction="back" transport={transportKeys} />
+          {transportKeys ? <View /> : <InfoIcon size={iconSize} />}
+          {transportKeys ? <View /> : <CaptionsIcon size={iconSize} />}
+          <SkipIcon size={iconSize} direction="forward" transport={transportKeys} />
         </Animated.View>
       </View>
     </GestureDetector>

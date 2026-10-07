@@ -20,7 +20,7 @@ export async function requestDiscoveryPermission(): Promise<boolean> {
   }
 }
 
-export type PermissionId = 'nearby' | 'notifications' | 'install';
+export type PermissionId = 'nearby' | 'notifications' | 'liveUpdates' | 'install';
 export type PermissionStatus = 'granted' | 'denied' | 'notRequired';
 
 type AndroidPermission = (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
@@ -33,8 +33,8 @@ const RUNTIME: Record<'nearby' | 'notifications', { permission: AndroidPermissio
   },
   notifications: {
     permission: 'android.permission.POST_NOTIFICATIONS' as AndroidPermission,
-    title: 'App updates',
-    message: 'Notifications alert you when a new app version is available.',
+    title: 'Playback activities and updates',
+    message: 'Show playback controls while content is playing and alerts for new app versions.',
   },
 };
 
@@ -45,6 +45,10 @@ function needsRuntimeGrant(): boolean {
 
 export async function getPermissionStatus(id: PermissionId): Promise<PermissionStatus> {
   if (Platform.OS !== 'android') return 'notRequired';
+  if (id === 'liveUpdates') {
+    if (typeof Platform.Version !== 'number' || Platform.Version < 36) return 'notRequired';
+    return (await NativeAppSettings.canPostLiveUpdates()) ? 'granted' : 'denied';
+  }
   if (id === 'install') return (await NativeAppSettings.canInstallPackages()) ? 'granted' : 'denied';
   if (!needsRuntimeGrant()) return 'notRequired';
   try {
@@ -60,6 +64,10 @@ export async function getPermissionStatus(id: PermissionId): Promise<PermissionS
  * after "Don't ask again"). Re-read the status when the app returns.
  */
 export async function requestPermission(id: PermissionId): Promise<PermissionStatus> {
+  if (id === 'liveUpdates') {
+    NativeAppSettings.openLiveUpdateSettings();
+    return getPermissionStatus(id);
+  }
   if (id === 'install') {
     NativeAppSettings.openInstallSettings();
     return getPermissionStatus(id);

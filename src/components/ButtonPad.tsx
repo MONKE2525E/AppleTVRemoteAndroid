@@ -12,6 +12,7 @@ interface ButtonPadProps {
   showContextualIcons: boolean;
   /** Space kept clear along the bottom edge for the app drawer handle. */
   bottomInset?: number;
+  transportKeys?: boolean;
   onSkipBack: () => void;
   onSkipForward: () => void;
 }
@@ -33,6 +34,7 @@ export function ButtonPad({
   scale,
   showContextualIcons,
   bottomInset = 0,
+  transportKeys = false,
   onSkipBack,
   onSkipForward,
 }: ButtonPadProps) {
@@ -69,11 +71,11 @@ export function ButtonPad({
       </View>
       {showContextualIcons && (
         <View style={[styles.skipRow, { marginTop: 16 * scale, gap: 48 * scale }]}>
-          <PressableScale accessibilityLabel="Skip back 10 seconds" onPress={onSkipBack}>
-            <SkipIcon size={skipSize * 0.75} direction="back" />
+          <PressableScale accessibilityLabel={transportKeys ? 'Rewind' : 'Skip back 10 seconds'} onPress={onSkipBack}>
+            <SkipIcon size={skipSize * 0.75} direction="back" transport={transportKeys} />
           </PressableScale>
-          <PressableScale accessibilityLabel="Skip forward 10 seconds" onPress={onSkipForward}>
-            <SkipIcon size={skipSize * 0.75} direction="forward" />
+          <PressableScale accessibilityLabel={transportKeys ? 'Fast forward' : 'Skip forward 10 seconds'} onPress={onSkipForward}>
+            <SkipIcon size={skipSize * 0.75} direction="forward" transport={transportKeys} />
           </PressableScale>
         </View>
       )}

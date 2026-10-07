@@ -87,7 +87,13 @@ export function SkipIcon({
   size = DEFAULT_SIZE,
   color = COLORS.icon,
   direction,
-}: IconProps & { direction: 'back' | 'forward'; seconds?: number }) {
+  transport = false,
+}: IconProps & { direction: 'back' | 'forward'; seconds?: number; transport?: boolean }) {
+  if (transport) return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d={direction === 'back' ? 'M11 5v14L2 12z M22 5v14l-9-7z' : 'M2 5v14l9-7z M13 5v14l9-7z'} fill={color} />
+    </Svg>
+  );
   if (direction === 'back') {
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24">
