@@ -1,5 +1,6 @@
 package com.privateremote.appletv.appletv
 
+import dev.atvremote.protocol.companion.ProtocolException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -54,6 +55,41 @@ class ConnectionRetryTest {
             if (++attempts == 1) withTimeout(100) { awaitCancellation() }
         }
         assertEquals(2, attempts)
+    }
+
+    @Test fun `a Companion response timeout can recover`() = runTest {
+        var attempts = 0
+        val result = retryConnection {
+            if (++attempts == 1) {
+                throw ProtocolException("timed out waiting for response to _sessionStart")
+            }
+            "connected"
+        }
+        assertEquals("connected", result)
+        assertEquals(2, attempts)
+        assertEquals(1000L, testScheduler.currentTime)
+    }
+
+    @Test fun `repeated Companion response timeouts exhaust after three attempts`() = runTest {
+        var attempts = 0
+        val timeout = ProtocolException("timed out waiting for response to _sessionStart")
+        try {
+            retryConnection { attempts++; throw timeout }
+            fail<Unit>("Expected response timeout")
+        } catch (e: ProtocolException) { assertSame(timeout, e) }
+        assertEquals(3, attempts)
+        assertEquals(3000L, testScheduler.currentTime)
+    }
+
+    @Test fun `unrelated protocol errors stop immediately`() = runTest {
+        var attempts = 0
+        val failure = ProtocolException("invalid response payload")
+        try {
+            retryConnection { attempts++; throw failure }
+            fail<Unit>("Expected protocol failure")
+        } catch (e: ProtocolException) { assertSame(failure, e) }
+        assertEquals(1, attempts)
+        assertEquals(0L, testScheduler.currentTime)
     }
 
     @Test fun `cancelling during backoff prevents further connections`() = runTest {

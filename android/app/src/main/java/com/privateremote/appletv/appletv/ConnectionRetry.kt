@@ -1,9 +1,12 @@
 package com.privateremote.appletv.appletv
 
+import dev.atvremote.protocol.companion.ProtocolException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import java.io.IOException
+
+private const val RESPONSE_TIMEOUT_MESSAGE_PREFIX = "timed out waiting for response to "
 
 /** Three attempts for temporary network failures, with 1s and 2s pauses. */
 internal suspend fun <T> retryConnection(
@@ -15,10 +18,15 @@ internal suspend fun <T> retryConnection(
             return connect()
         } catch (e: Exception) {
             if (e is CancellationException && e !is TimeoutCancellationException) throw e
-            if (attempt == 2 || (e !is IOException && e !is TimeoutCancellationException)) throw e
+            if (attempt == 2 || !isRetryableConnectionFailure(e)) throw e
         }
         delay(1000L * (attempt + 1))
         beforeRetry()
     }
     error("Unreachable")
 }
+
+private fun isRetryableConnectionFailure(error: Exception): Boolean =
+    error is IOException ||
+        error is TimeoutCancellationException ||
+        (error is ProtocolException && error.message?.startsWith(RESPONSE_TIMEOUT_MESSAGE_PREFIX) == true)
