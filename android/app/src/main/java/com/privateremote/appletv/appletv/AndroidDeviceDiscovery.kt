@@ -11,20 +11,21 @@ import dev.atvremote.protocol.discovery.COMPANION_SERVICE_TYPE
 import dev.atvremote.protocol.discovery.DeviceDiscovery
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 
 /**
  * [DeviceDiscovery] backed by Android's NsdManager — the protocol module
  * itself stays platform-agnostic (see android/protocol/UPSTREAM.md).
  *
- * Discovery and resolution are deliberately separated: on older platform
- * versions overlapping `resolveService` calls fail with ALREADY_ACTIVE, so
- * services are collected first and resolved one at a time.
+ * Services are resolved one at a time (overlapping `resolveService` calls
+ * fail with ALREADY_ACTIVE on older platform versions), but each one as soon
+ * as it is found rather than after the whole scan window, so an Apple TV shows
+ * up within a second or two instead of after [scan]'s full timeout.
  */
 class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
 
@@ -37,7 +38,9 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
     /** Reports each device as it resolves, rather than only at the end. */
     suspend fun scan(timeoutMs: Long, onResolved: (AppleTvDevice) -> Unit): List<AppleTvDevice> =
         withContext(Dispatchers.IO) {
-            val found = ConcurrentLinkedQueue<NsdServiceInfo>()
+            val pending = Channel<NsdServiceInfo>(Channel.UNLIMITED)
+            val seen = ConcurrentHashMap.newKeySet<String>()
+            val resolved = mutableListOf<AppleTvDevice>()
             val multicast = wifi.createMulticastLock("atv-companion-nsd").apply {
                 setReferenceCounted(true)
                 acquire()
@@ -49,7 +52,8 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 }
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Log.i(TAG, "NSD found ${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
-                    found.add(serviceInfo)
+                    // IPv4 and IPv6 each report the same service name.
+                    if (seen.add(serviceInfo.serviceName)) pending.trySend(serviceInfo)
                 }
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
                 override fun onDiscoveryStopped(serviceType: String) = Unit
@@ -63,23 +67,25 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
 
             try {
                 nsd.discoverServices(COMPANION_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
-                delay(timeoutMs)
+                withTimeoutOrNull(timeoutMs) {
+                    for (info in pending) {
+                        val device = withTimeoutOrNull(3000) { resolve(info) } ?: continue
+                        Log.i(TAG, "NSD resolved ${device.name} ${device.address}:${device.port}")
+                        resolved.add(device)
+                        onResolved(device)
+                    }
+                }
             } finally {
+                pending.close()
                 runCatching { nsd.stopServiceDiscovery(listener) }
                 runCatching { if (multicast.isHeld) multicast.release() }
             }
-
-            found.distinctBy { it.serviceName }.mapNotNull { info ->
-                withTimeoutOrNull(3000) { resolve(info) }?.also {
-                    Log.i(TAG, "NSD resolved ${it.name} ${it.address}:${it.port}")
-                    onResolved(it)
-                }
-            }
+            resolved
         }
 
     private suspend fun resolve(info: NsdServiceInfo): AppleTvDevice? =
         suspendCancellableCoroutine { cont: CancellableContinuation<AppleTvDevice?> ->
-            nsd.resolveService(info, object : NsdManager.ResolveListener {
+            val listener = object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                     Log.w(TAG, "NSD resolve failed ${serviceInfo.serviceName} code=$errorCode")
                     if (cont.isActive) cont.resume(null)
@@ -98,7 +104,12 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                         ),
                     )
                 }
-            })
+            }
+            nsd.resolveService(info, listener)
+            // A timed-out resolve must not leave the next one failing with ALREADY_ACTIVE.
+            if (Build.VERSION.SDK_INT >= 34) {
+                cont.invokeOnCancellation { runCatching { nsd.stopServiceResolution(listener) } }
+            }
         }
 
     private fun hostAddress(info: NsdServiceInfo): String? {
