@@ -2,7 +2,7 @@ import { NativeEventEmitter } from 'react-native';
 import { captureCommandError } from '../analytics/analytics';
 import NativeAppleTV from '../specs/NativeAppleTV';
 import { DEV_FAKE_UI } from './devFakeUi';
-import { appleTVStore } from './store';
+import { FAKE_APPS, appleTVStore } from './store';
 import type {
   AppInfo,
   AppleTVDeviceInfo,
@@ -45,7 +45,8 @@ if (!DEV_FAKE_UI) {
     appleTVStore.setTextInput(payload as TextInputInfo);
   });
   emitter.addListener('appsChanged', (payload: Object) => {
-    appleTVStore.setApps((payload as { apps: AppInfo[] }).apps);
+    const { deviceId, apps } = payload as { deviceId: string; apps: AppInfo[] };
+    appleTVStore.setAppsForDevice(deviceId, apps);
   });
 }
 
@@ -103,7 +104,13 @@ export const appleTV = {
       appleTVStore.setConnection({ state: 'disconnected' });
       return Promise.resolve();
     }
-    return soft(NativeAppleTV.disconnect(), 'disconnect');
+    return NativeAppleTV.disconnect().then(
+      () => undefined,
+      error => {
+        captureCommandError('disconnect', error);
+        throw error;
+      },
+    );
   },
   forgetDevice: (deviceId: string) => {
     appleTVStore.removePairedDevice(deviceId);
@@ -142,8 +149,24 @@ export const appleTV = {
   },
 
   sendText: (text: string, clearPrevious: boolean) => soft(NativeAppleTV.sendText(text, clearPrevious), 'sendText'),
-  loadApps: () => soft(NativeAppleTV.loadApps(), 'loadApps'),
-  launchApp: (bundleId: string) => soft(NativeAppleTV.launchApp(bundleId), 'launchApp'),
+  /** Resolves false when the TV couldn't list its apps, so the drawer can offer a retry. */
+  loadApps: (): Promise<boolean> => {
+    if (DEV_FAKE_UI) {
+      appleTVStore.setApps(FAKE_APPS);
+      return Promise.resolve(true);
+    }
+    return NativeAppleTV.loadApps().then(
+      () => true,
+      error => {
+        captureCommandError('loadApps', error);
+        return false;
+      },
+    );
+  },
+  launchApp: (bundleId: string) => {
+    if (DEV_FAKE_UI) return Promise.resolve();
+    return soft(NativeAppleTV.launchApp(bundleId), 'launchApp');
+  },
 
   getDiagnosticsSnapshot: () =>
     NativeAppleTV.getDiagnosticsSnapshot() as Promise<DiagnosticsSnapshot>,

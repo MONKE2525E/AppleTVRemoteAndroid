@@ -31,6 +31,22 @@ const FAKE_DEVICE: AppleTVDeviceInfo = {
   identifier: null,
 };
 
+/** TEMP DEV-ONLY: app drawer contents for the fake device. */
+export const FAKE_APPS: AppInfo[] = [
+  { name: 'TV', bundleId: 'com.apple.TVWatchList' },
+  { name: 'Netflix', bundleId: 'com.netflix.Netflix' },
+  { name: 'YouTube', bundleId: 'com.google.ios.youtube' },
+  { name: 'Disney+', bundleId: 'com.disney.disneyplus' },
+  { name: 'Music', bundleId: 'com.apple.TVMusic' },
+  { name: 'Prime Video', bundleId: 'com.amazon.aiv.AIVApp' },
+  { name: 'Plex', bundleId: 'com.plexapp.plex' },
+  { name: 'Photos', bundleId: 'com.apple.TVPhotos' },
+  { name: 'Max', bundleId: 'com.wbd.stream' },
+  { name: 'Spotify', bundleId: 'com.spotify.client' },
+  { name: 'App Store', bundleId: 'com.apple.TVAppStore' },
+  { name: 'Settings', bundleId: 'com.apple.TVSettings' },
+];
+
 /** Extra TVs the fake add-flow can discover. */
 export const FAKE_DISCOVERY_CATALOG: AppleTVDeviceInfo[] = [
   { id: 'fake-2', name: 'Bedroom', address: '192.168.0.51', port: 7000, model: 'AppleTV6,2', identifier: null },
@@ -107,7 +123,10 @@ class AppleTVStore {
       const devices = this.state.devices.some(d => d.id === connection.device.id)
         ? this.state.devices
         : [...this.state.devices, connection.device];
-      this.set({ connection, devices });
+      const previous = this.state.connection.state === 'connected' ? this.state.connection.device.id : null;
+      // App lists are per-TV; never show the last device's apps for a new one.
+      const apps = previous === connection.device.id ? this.state.apps : [];
+      this.set({ connection, devices, apps });
       return;
     }
     this.set({ connection });
@@ -117,6 +136,12 @@ class AppleTVStore {
   setCapabilities(capabilities: CapabilitiesInfo) { this.set({ capabilities }); }
   setTextInput(textInput: TextInputInfo) { this.set({ textInput }); }
   setApps(apps: AppInfo[]) { this.set({ apps }); }
+  setAppsForDevice(deviceId: string, apps: AppInfo[]) {
+    const connection = this.state.connection;
+    if (connection.state !== 'connected' || connection.device.id !== deviceId) return false;
+    this.set({ apps });
+    return true;
+  }
 
   /** TEMP DEV-ONLY: flip fake now-playing so the contextual icon row can be verified. */
   toggleFakePlayback() {
@@ -159,7 +184,15 @@ class AppleTVStore {
           ? { state: 'connected', device: next, airplayPaired: true }
           : { state: 'disconnected' },
         playback: next ? this.state.playback : null,
+        apps: [],
       });
+      return;
+    }
+    const failed = this.state.connection.state === 'failed' ? this.state.connection.device : null;
+    if (failed?.id === deviceId) {
+      // A failed reconnect target is not the native connection: forget it
+      // locally without disconnecting a different TV that may still be live.
+      this.set({ devices, connection: { state: 'disconnected' }, apps: [] });
       return;
     }
     this.set({ devices });

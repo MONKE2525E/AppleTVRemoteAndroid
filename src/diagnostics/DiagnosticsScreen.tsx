@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionTitle: {
-    color: COLORS.accent,
+    color: COLORS.textSecondary,
     fontSize: 13,
     fontWeight: '700',
     textTransform: 'uppercase',

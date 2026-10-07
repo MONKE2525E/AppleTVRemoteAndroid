@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.telephony.TelephonyManager
+import java.util.Locale
 import com.facebook.react.bridge.Arguments
 import com.privateremote.appletv.BuildConfig
 import com.facebook.react.bridge.Promise
@@ -21,6 +23,17 @@ class AppSettingsModule(context: ReactApplicationContext) : NativeAppSettingsSpe
             putString("build", BuildConfig.VERSION_CODE.toString())
             putString("namespace", BuildConfig.APPLICATION_ID)
         })
+    }
+
+    /** Where the phone actually is: a Canadian SIM on an en-US phone should still mean the Canadian App Store. */
+    override fun getCountryCodes(promise: Promise) {
+        val telephony = reactApplicationContext.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        val codes = listOfNotNull(
+            runCatching { telephony?.networkCountryIso }.getOrNull(),
+            runCatching { telephony?.simCountryIso }.getOrNull(),
+            Locale.getDefault().country,
+        ).map { it.trim().lowercase(Locale.ROOT) }.filter { it.length == 2 }.distinct()
+        promise.resolve(Arguments.createArray().apply { codes.forEach { pushString(it) } })
     }
 
     override fun canInstallPackages(promise: Promise) {

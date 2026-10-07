@@ -656,11 +656,38 @@ class AppleTVController(
     }
 
     suspend fun loadApps() {
-        val apps = command { listApps() }
-        listener?.onAppsChanged(apps)
+        val device = currentDevice ?: throw IllegalStateException("Not connected")
+        val currentRoku = roku
+        if (currentRoku != null) {
+            val apps = currentRoku.apps()
+            if (currentDevice === device && roku === currentRoku) {
+                listener?.onAppsChanged(device.credentialKey, apps)
+            }
+            return
+        }
+
+        val currentRemote = remote ?: throw IllegalStateException("Not connected")
+        val apps = currentRemote.listApps()
+        if (currentDevice === device && remote === currentRemote && roku == null) {
+            listener?.onAppsChanged(device.credentialKey, apps)
+        }
     }
 
-    suspend fun launchApp(bundleId: String) = command { launchApp(bundleId) }
+    suspend fun launchApp(bundleId: String) {
+        val device = currentDevice ?: throw IllegalStateException("Not connected")
+        val currentRoku = roku
+        if (currentRoku != null) {
+            if (currentDevice !== device || roku !== currentRoku) throw IllegalStateException("TV session changed")
+            currentRoku.launch(bundleId)
+            return
+        }
+
+        val currentRemote = remote ?: throw IllegalStateException("Not connected")
+        if (currentDevice !== device || remote !== currentRemote || roku != null) {
+            throw IllegalStateException("TV session changed")
+        }
+        currentRemote.launchApp(bundleId)
+    }
 
     // ------------------------------------------------------- touch surface
 

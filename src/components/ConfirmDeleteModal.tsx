@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.separator,
   },
   cancelLabel: {
-    color: COLORS.accent,
+    color: COLORS.icon,
     fontSize: 17,
     textAlign: 'center',
   },

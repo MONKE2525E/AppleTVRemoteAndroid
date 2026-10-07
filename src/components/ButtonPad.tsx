@@ -10,6 +10,8 @@ interface ButtonPadProps {
   height: number;
   scale: number;
   showContextualIcons: boolean;
+  /** Space kept clear along the bottom edge for the app drawer handle. */
+  bottomInset?: number;
   onSkipBack: () => void;
   onSkipForward: () => void;
 }
@@ -25,15 +27,23 @@ const ARROWS = [
  * Click-wheel style alternative to TouchSurface: a large ring with
  * up/left/right/down arrows and a smaller Select disc in the middle.
  */
-export function ButtonPad({ width, height, scale, showContextualIcons, onSkipBack, onSkipForward }: ButtonPadProps) {
+export function ButtonPad({
+  width,
+  height,
+  scale,
+  showContextualIcons,
+  bottomInset = 0,
+  onSkipBack,
+  onSkipForward,
+}: ButtonPadProps) {
   const skipSize = 44 * scale;
   const skipRow = showContextualIcons ? skipSize + 16 * scale : 0;
-  const diameter = Math.max(0, Math.min(width, height - skipRow));
+  const diameter = Math.max(0, Math.min(width, height - skipRow - bottomInset));
   const zone = diameter * 0.3;
   const select = diameter * 0.36;
 
   return (
-    <View style={[styles.container, { width, height }]}>
+    <View style={[styles.container, { width, height, paddingBottom: bottomInset }]}>
       <View style={[styles.ring, { width: diameter, height: diameter, borderRadius: diameter / 2 }]}>
         {ARROWS.map(({ button, label, Icon, at }) => (
           <PressableScale
@@ -48,7 +58,10 @@ export function ButtonPad({ width, height, scale, showContextualIcons, onSkipBac
         <PressableScale
           accessibilityLabel="Select"
           haptic="medium"
-          style={[styles.select, { width: select, height: select, borderRadius: select / 2 }]}
+          style={[
+            styles.select,
+            { width: select, height: select, borderRadius: select / 2, top: (diameter - select) / 2, left: (diameter - select) / 2 },
+          ]}
           onPress={() => void appleTV.pressButton('SELECT')}
         >
           <View />
@@ -78,6 +91,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   arrow: { position: 'absolute' },
-  select: { backgroundColor: COLORS.controlFill },
+  // Pinned like the arrows: flex-centering could lay it out against a stale,
+  // smaller ring while the pad resizes under the device list animation.
+  select: { position: 'absolute', backgroundColor: COLORS.controlFill },
   skipRow: { flexDirection: 'row', alignItems: 'center' },
 });

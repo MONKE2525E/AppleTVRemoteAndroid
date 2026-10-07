@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { GEOMETRY } from '../adaptive/geometry';
 import { track } from '../analytics/analytics';
 import { useAdaptiveLayout } from '../adaptive/useAdaptiveLayout';
-import { COLORS, SELECTOR_SPRING } from '../animations/constants';
+import { COLORS, DRAWER_SPRING, SELECTOR_SPRING } from '../animations/constants';
 import { useAppleTV } from '../appletv/useAppleTV';
 import type { AppleTVDeviceInfo } from '../appletv/types';
 import { PressableScale } from '../components/PressableScale';
@@ -13,6 +13,9 @@ import { ButtonPad } from '../components/ButtonPad';
 import { TouchSurface } from '../components/TouchSurface';
 import { TransportRow } from '../components/TransportRow';
 import { AddAppleTvModal } from '../components/AddAppleTvModal';
+import { AppDrawer } from '../components/AppDrawer';
+import { DRAWER_HANDLE_HEIGHT, PadOverlay } from '../components/PadOverlay';
+import { triggerHaptic } from '../haptics/haptics';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { DiagnosticsScreen } from '../diagnostics/DiagnosticsScreen';
 import { PairingScreen } from '../pairing/PairingScreen';
@@ -23,6 +26,7 @@ export function RemoteScreen() {
   const inputMode = useInputMode();
   const layout = useAdaptiveLayout();
   const { scale, contentRect } = layout;
+  const window = useWindowDimensions();
 
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -32,6 +36,9 @@ export function RemoteScreen() {
   const [devicePendingDelete, setDevicePendingDelete] = useState<AppleTVDeviceInfo | null>(null);
   const [padHeight, setPadHeight] = useState(0);
   const progress = useSharedValue(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerPulling, setDrawerPulling] = useState(false);
+  const drawerProgress = useSharedValue(0);
 
   // Every piece that moves for open/close (Mute/Power fade, chevron
   // rotation, device-row fade-in, touch-surface reflow) reads this one
@@ -45,7 +52,31 @@ export function RemoteScreen() {
   // just reflect the new state, not strand the selector mid-animation.
   useEffect(() => {
     setSelectorOpen(false);
-  }, [connection.state]);
+    setDrawerOpen(false);
+    setDrawerPulling(false);
+    drawerProgress.value = 0;
+  }, [connection.state, drawerProgress]);
+
+  const settleDrawer = (open: boolean) => {
+    setDrawerOpen(open);
+    setDrawerPulling(false);
+    if (open) triggerHaptic('selection');
+  };
+
+  // Android back dismisses the topmost overlay before leaving the app.
+  useEffect(() => {
+    if (!drawerOpen && !selectorOpen) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (drawerOpen) {
+        drawerProgress.value = withSpring(0, DRAWER_SPRING);
+        setDrawerOpen(false);
+      } else {
+        setSelectorOpen(false);
+      }
+      return true;
+    });
+    return () => subscription.remove();
+  }, [drawerOpen, selectorOpen, drawerProgress]);
 
   const connectedKind =
     connection.state === 'connected' ? (connection.device.model?.startsWith('Roku ') ? 'roku' : 'apple_tv') : null;
@@ -53,13 +84,14 @@ export function RemoteScreen() {
     if (connectedKind) track('device_connected', { kind: connectedKind });
   }, [connectedKind]);
 
-  const listHeight = (Math.max(1, devices.length) + 2) * GEOMETRY.deviceRowHeight * scale;
+  const listHeight = (Math.max(1, devices.length) + 1) * GEOMETRY.deviceRowHeight * scale;
 
   // List slot grows under the top bar; the pad flex-fills whatever remains
   // above the pinned transport footer. Play/Back/TV never move.
   const listSlotStyle = useAnimatedStyle(() => ({
     height: progress.value * listHeight,
   }));
+  const selectorScrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   if (connection.state !== 'connected') {
     return <PairingScreen devices={discovered} connection={connection} />;
@@ -75,6 +107,9 @@ export function RemoteScreen() {
     (GEOMETRY.gapSurfaceToTransport + GEOMETRY.transportBigSize + GEOMETRY.bottomMargin) * scale +
     (connection.airplayPaired ? 0 : 48);
 
+  const sheetHeight = Math.round(Math.min(window.height * 0.72, Math.max(320, window.height - 120)));
+  const drawerHandleInset = DRAWER_HANDLE_HEIGHT * scale;
+
   const onPadLayout = (event: LayoutChangeEvent) => {
     const next = Math.max(0, Math.floor(event.nativeEvent.layout.height));
     setPadHeight(prev => (prev === next ? prev : next));
@@ -83,6 +118,8 @@ export function RemoteScreen() {
   return (
     <View style={styles.root}>
       <View
+        importantForAccessibility={drawerOpen ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={drawerOpen}
         style={[
           styles.content,
           { left: contentRect.x, top: contentRect.y, width: contentRect.width, height: contentRect.height },
@@ -96,6 +133,20 @@ export function RemoteScreen() {
         >
           <View />
         </PressableScale>
+
+        {/* Click-away for the device list; the pill and list sit above it. */}
+        <Animated.View
+          pointerEvents={selectorOpen ? 'auto' : 'none'}
+          importantForAccessibility={selectorOpen ? 'auto' : 'no-hide-descendants'}
+          accessibilityElementsHidden={!selectorOpen}
+          style={[styles.selectorScrim, selectorScrimStyle]}
+        >
+          <Pressable
+            accessibilityLabel="Close device list"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setSelectorOpen(false)}
+          />
+        </Animated.View>
 
         <TopBar
           devices={devices}
@@ -146,6 +197,7 @@ export function RemoteScreen() {
               height={padHeight}
               scale={scale}
               showContextualIcons={hasNowPlaying}
+              bottomInset={drawerHandleInset}
               onSkipBack={() => commands.skipBy(-10)}
               onSkipForward={() => commands.skipBy(10)}
             />
@@ -160,6 +212,16 @@ export function RemoteScreen() {
               onSkipForward={() => commands.skipBy(10)}
             />
           ))}
+          {padHeight > 0 && (
+            <PadOverlay
+              width={touchSurfaceWidth}
+              scale={scale}
+              drawerProgress={drawerProgress}
+              sheetHeight={sheetHeight}
+              onDrawerDragStart={() => setDrawerPulling(true)}
+              onDrawerSettle={settleDrawer}
+            />
+          )}
         </View>
 
         <View
@@ -177,6 +239,18 @@ export function RemoteScreen() {
           <TransportRow scale={scale} playback={playback} />
         </View>
       </View>
+
+      <AppDrawer
+        open={drawerOpen}
+        active={drawerOpen || drawerPulling}
+        progress={drawerProgress}
+        sheetHeight={sheetHeight}
+        width={contentRect.width}
+        left={contentRect.x}
+        scale={scale}
+        device={connection.device}
+        onSettle={settleDrawer}
+      />
 
       <DiagnosticsScreen visible={diagnosticsVisible} onClose={() => setDiagnosticsVisible(false)} />
       <AddAppleTvModal visible={addVisible} onClose={() => setAddVisible(false)} />
@@ -210,6 +284,12 @@ const styles = StyleSheet.create({
   },
   transportFooter: {
     flexShrink: 0,
+  },
+  selectorScrim: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 15,
+    elevation: 15,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   diagnosticsHotspot: {
     position: 'absolute',

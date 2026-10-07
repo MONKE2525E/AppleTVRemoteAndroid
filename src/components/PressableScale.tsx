@@ -37,6 +37,12 @@ export function PressableScale({
     if (haptic) triggerHaptic(haptic);
   };
 
+  const activateFromAccessibility = () => {
+    if (disabled || !onPress) return;
+    handlePressIn();
+    onPress();
+  };
+
   const tap = Gesture.Tap()
     .maxDuration(400)
     .enabled(!disabled)
@@ -72,8 +78,15 @@ export function PressableScale({
   return (
     <GestureDetector gesture={composed}>
       <Animated.View
+        accessible
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
+        accessibilityState={{ disabled }}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={event => {
+          if (event.nativeEvent.actionName === 'activate') activateFromAccessibility();
+        }}
+        onAccessibilityTap={activateFromAccessibility}
         style={[styles.base, style, animatedStyle]}
       >
         {children}

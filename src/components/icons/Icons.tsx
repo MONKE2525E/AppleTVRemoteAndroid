@@ -150,7 +150,7 @@ export function CaptionsIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconP
   );
 }
 
-export function CheckmarkIcon({ size = DEFAULT_SIZE, color = COLORS.accent }: IconProps) {
+export function CheckmarkIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M5 12l5 5L19 7" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none" />

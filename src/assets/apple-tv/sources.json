@@ -1,0 +1,76 @@
+{
+  "reference": "https://support.apple.com/guide/deployment/bundle-ids-for-apple-tv-apple-apps-depcdd66fe58/web",
+  "description": "Apple TV system app artwork from Apple Platform Deployment. Bundled locally for region-independent, offline display.",
+  "assets": [
+    {
+      "bundleId": "com.apple.TVAppStore",
+      "file": "appstore.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/cd69ec3d5470061721656e05d6c76333.png"
+    },
+    {
+      "bundleId": "com.apple.Arcade",
+      "file": "arcade.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/cfa092960fe6cb45621b945b549f12ef.png"
+    },
+    {
+      "bundleId": "com.apple.facetime",
+      "file": "facetime.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/8188b10f6ac67a93830542044df1aa91.png"
+    },
+    {
+      "bundleId": "com.apple.Fitness",
+      "file": "fitness.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/66131bfbb85672e2982ce6662de7fd2b.png"
+    },
+    {
+      "bundleId": "com.apple.TVHomeSharing",
+      "file": "computers.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/7408de6d13cf09241848fed559d8b9aa.png"
+    },
+    {
+      "bundleId": "com.apple.TVMovies",
+      "file": "movies.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/194b304615ad64738ae1dc007e560f79.png"
+    },
+    {
+      "bundleId": "com.apple.TVMusic",
+      "file": "music.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/077f8af012c613edef4bcda3d3a191c8.png"
+    },
+    {
+      "bundleId": "com.apple.TVPhotos",
+      "file": "photos.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/76e087651fc1aa4ef6f2a83911b0f22f.png"
+    },
+    {
+      "bundleId": "com.apple.podcasts",
+      "file": "podcasts.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/9b294bda0e8fe0de98bd3d9f1885639a.png"
+    },
+    {
+      "bundleId": "com.apple.TVSearch",
+      "file": "search.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/08f09cdac4972f4b3daf8d8912eea958.png"
+    },
+    {
+      "bundleId": "com.apple.TVSettings",
+      "file": "settings.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/53286707fd1ad5fb25d30e83bc67b76d.png"
+    },
+    {
+      "bundleId": "com.apple.Sing",
+      "file": "sing.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/e6bf83bb2c9562d02282b6dc567356c6.png"
+    },
+    {
+      "bundleId": "com.apple.TVWatchList",
+      "file": "tv.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/85980f936d7ce9cb09a09ef1ef7cfcf8.png"
+    },
+    {
+      "bundleId": "com.apple.TVShows",
+      "file": "tvshows.png",
+      "source": "https://help.apple.com/assets/6A7205CCBE02946C700729A7/6A7205D7A147F236440CA052/en_US/3b4cc6b6ebd0c1b8597e4dbf3aa11d90.png"
+    }
+  ]
+}

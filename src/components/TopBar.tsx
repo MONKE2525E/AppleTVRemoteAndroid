@@ -1,7 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
-import { COLORS } from '../animations/constants';
-import { openSettings } from '../settings/SettingsScreen';
 import { GEOMETRY } from '../adaptive/geometry';
 import type { AppleTVDeviceInfo } from '../appletv/types';
 import { CircleIconButton } from './CircleIconButton';
@@ -62,8 +60,9 @@ export function TopBar({
   const listTop = rowSize + 8 * scale;
 
   return (
-    <View style={styles.container}>
+    <View pointerEvents="box-none" style={styles.container}>
       <View
+        pointerEvents="box-none"
         style={[
           styles.row,
           {
@@ -73,7 +72,12 @@ export function TopBar({
           },
         ]}
       >
-        <Animated.View style={[sideButtonStyle, styles.side]} pointerEvents={selectorOpen ? 'none' : 'auto'}>
+        <Animated.View
+          style={[sideButtonStyle, styles.side]}
+          pointerEvents={selectorOpen ? 'none' : 'auto'}
+          importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={selectorOpen}
+        >
           <CircleIconButton size={rowSize} onPress={onToggleMute} accessibilityLabel={muted ? 'Unmute' : 'Mute'}>
             <MuteIcon size={rowSize * 0.4} />
           </CircleIconButton>
@@ -81,7 +85,12 @@ export function TopBar({
 
         <DeviceSelectorPill label={label} progress={progress} scale={scale} onPress={onToggleSelector} />
 
-        <Animated.View style={[sideButtonStyle, styles.side]} pointerEvents={selectorOpen ? 'none' : 'auto'}>
+        <Animated.View
+          style={[sideButtonStyle, styles.side]}
+          pointerEvents={selectorOpen ? 'none' : 'auto'}
+          importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={selectorOpen}
+        >
           <CircleIconButton size={rowSize} onPress={onPower} accessibilityLabel="Power">
             <PowerIcon size={rowSize * 0.4} />
           </CircleIconButton>
@@ -98,6 +107,8 @@ export function TopBar({
           listStyle,
         ]}
         pointerEvents={selectorOpen ? 'auto' : 'none'}
+        importantForAccessibility={selectorOpen ? 'auto' : 'no-hide-descendants'}
+        accessibilityElementsHidden={!selectorOpen}
       >
         {devices.map(device => (
           <View
@@ -117,7 +128,6 @@ export function TopBar({
           </View>
         ))}
         <AddTvRow scale={scale} onPress={onFindDevices} />
-        <Pressable accessibilityRole="button" onPress={openSettings} style={{ minHeight: GEOMETRY.deviceRowHeight * scale, justifyContent: 'center' }}><Text style={{ color: COLORS.accent, fontSize: 16 * scale }}>Settings</Text></Pressable>
       </Animated.View>
     </View>
   );

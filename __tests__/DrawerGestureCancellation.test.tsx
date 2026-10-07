@@ -1,0 +1,404 @@
+import ReactTestRenderer from 'react-test-renderer';
+import { Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { SharedValue } from 'react-native-reanimated';
+import { AppDrawer } from '../src/components/AppDrawer';
+import { PadOverlay } from '../src/components/PadOverlay';
+import { PressableScale } from '../src/components/PressableScale';
+import { TopBar } from '../src/components/TopBar';
+import { RemoteScreen } from '../src/remote/RemoteScreen';
+import { appleTVStore } from '../src/appletv/store';
+import { appleTV } from '../src/appletv/client';
+import type { AppleTVDeviceInfo } from '../src/appletv/types';
+
+jest.mock('react-native-gesture-handler', () => ({
+  ...jest.requireActual('react-native-gesture-handler'),
+  GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+jest.mock('react-native-reanimated', () => {
+  const ReactNative = jest.requireActual('react-native');
+  const React = jest.requireActual('react');
+  const entrance = {
+    delay: () => entrance,
+    duration: () => entrance,
+  };
+  return {
+    __esModule: true,
+    default: {
+      View: ReactNative.View,
+      ScrollView: ReactNative.ScrollView,
+      Image: ReactNative.Image,
+      Text: ReactNative.Text,
+      createAnimatedComponent: (component: unknown) => component,
+    },
+    FadeIn: entrance,
+    FadeInDown: entrance,
+    cancelAnimation: jest.fn(),
+    interpolate: () => 0,
+    useAnimatedStyle: (callback: () => unknown) => callback(),
+    useSharedValue: (value: unknown) => React.useRef({ value }).current,
+    withRepeat: (animation: unknown) => animation,
+    withSpring: (value: unknown) => value,
+    withTiming: (value: unknown) => value,
+  };
+});
+
+const device: AppleTVDeviceInfo = {
+  id: 'tv-1',
+  name: 'Living Room',
+  address: '192.168.0.10',
+  port: 7000,
+  model: 'Roku TV',
+  identifier: 'roku:tv-1',
+};
+
+const safeArea = (children: React.ReactNode) => (
+  <GestureHandlerRootView>
+    <SafeAreaProvider initialMetrics={{
+      frame: { x: 0, y: 0, width: 360, height: 800 },
+      insets: { top: 0, right: 0, bottom: 0, left: 0 },
+    }}>
+      {children}
+    </SafeAreaProvider>
+  </GestureHandlerRootView>
+);
+
+afterEach(() => {
+  appleTVStore.setApps([]);
+  jest.restoreAllMocks();
+});
+
+test('a failed refresh hides cached apps and offers a retry that restores the grid', async () => {
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  const load = jest.spyOn(appleTV, 'loadApps').mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  const drawer = (active: boolean) => safeArea(
+    <AppDrawer open active={active} progress={{ value: 1 } as SharedValue<number>}
+      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+  );
+
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(true)); });
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' }).length).toBeGreaterThan(0);
+  await ReactTestRenderer.act(() => renderer.update(drawer(false)));
+  await ReactTestRenderer.act(() => renderer.update(drawer(true)));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(appleTVStore.getSnapshot().apps).toHaveLength(1);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' })).toHaveLength(0);
+  expect(JSON.stringify(renderer.toJSON())).toContain("Couldn't load apps from ");
+
+  const retry = renderer.root.findByType(PressableScale);
+  expect(retry.props.accessibilityLabel).toBe('Retry loading apps');
+  await ReactTestRenderer.act(() => retry.props.onPress());
+  expect(load).toHaveBeenCalledTimes(3);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Retry loading apps' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' }).length).toBeGreaterThan(0);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('the closed drawer hides the sheet and scrim from accessibility until it opens', async () => {
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  const drawer = (open: boolean) => safeArea(
+    <AppDrawer open={open} active={false} progress={{ value: open ? 1 : 0 } as SharedValue<number>}
+      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+  );
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(false)); });
+  const containers = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.importantForAccessibility != null);
+  expect(containers()).toHaveLength(2);
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(node.props.accessibilityElementsHidden).toBe(true);
+  }
+  await ReactTestRenderer.act(() => renderer.update(drawer(true)));
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('auto');
+    expect(node.props.accessibilityElementsHidden).toBe(false);
+  }
+  await ReactTestRenderer.act(() => renderer.update(drawer(false)));
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(node.props.accessibilityElementsHidden).toBe(true);
+  }
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('remote controls and selector controls follow the visible overlay state', async () => {
+  const previous = appleTVStore.getSnapshot().connection;
+  appleTVStore.setConnection({ state: 'connected', device, airplayPaired: true });
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(safeArea(<RemoteScreen />)); });
+  const containerFor = (node: ReactTestRenderer.ReactTestInstance) => {
+    let parent = node.parent;
+    while (parent && parent.props.accessibilityElementsHidden == null) parent = parent.parent;
+    if (!parent) throw new Error('Accessibility container missing');
+    return parent;
+  };
+  const expectHidden = (node: ReactTestRenderer.ReactTestInstance, hidden: boolean) => {
+    expect(node.props.accessibilityElementsHidden).toBe(hidden);
+    expect(node.props.importantForAccessibility).toBe(hidden ? 'no-hide-descendants' : 'auto');
+  };
+  const topBar = () => renderer.root.findByType(TopBar);
+  const selectorScrim = () => containerFor(renderer.root.findByProps({ accessibilityLabel: 'Close device list' }));
+  const selectorList = () => containerFor(renderer.root.findAllByProps({ accessibilityLabel: 'Add Apple TV' })[0]);
+  expectHidden(containerFor(topBar()), false);
+  expectHidden(selectorScrim(), true);
+  expectHidden(selectorList(), true);
+  await ReactTestRenderer.act(() => topBar().props.onToggleSelector());
+  expectHidden(selectorScrim(), false);
+  expectHidden(selectorList(), false);
+  for (const label of ['Mute', 'Power']) {
+    expectHidden(containerFor(renderer.root.findAllByProps({ accessibilityLabel: label })[0]), true);
+  }
+  await ReactTestRenderer.act(() => topBar().props.onToggleSelector());
+  expectHidden(selectorScrim(), true);
+  expectHidden(selectorList(), true);
+  for (const label of ['Mute', 'Power']) {
+    expectHidden(containerFor(renderer.root.findAllByProps({ accessibilityLabel: label })[0]), false);
+  }
+  await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(true));
+  expectHidden(containerFor(topBar()), true);
+  expect(renderer.root.findByType(AppDrawer).props.open).toBe(true);
+  await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(false));
+  expectHidden(containerFor(topBar()), false);
+  await ReactTestRenderer.act(() => renderer.unmount());
+  appleTVStore.setConnection(previous);
+});
+
+test('a cancelled handle pull settles closed once, while a successful release keeps its chosen state', async () => {
+  const panSpy = jest.spyOn(Gesture, 'Pan');
+  const progress = { value: 0 } as SharedValue<number>;
+  const onDragStart = jest.fn();
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PadOverlay
+        width={320}
+        scale={1}
+        drawerProgress={progress}
+        sheetHeight={100}
+        onDrawerDragStart={onDragStart}
+        onDrawerSettle={onSettle}
+      />,
+    ));
+  });
+
+  const handlers = panSpy.mock.results[0].value.handlers;
+  handlers.onStart({});
+  handlers.onUpdate({ translationY: -45 });
+  handlers.onEnd({ velocityY: -900 }, false);
+  expect(onSettle).not.toHaveBeenCalled();
+  handlers.onFinalize({}, false);
+
+  expect(progress.value).toBe(0);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenLastCalledWith(false);
+
+  progress.value = 0;
+  onSettle.mockClear();
+  handlers.onStart({});
+  handlers.onUpdate({ translationY: -45 });
+  handlers.onEnd({ velocityY: 0 }, true);
+  handlers.onFinalize({}, true);
+
+  expect(progress.value).toBe(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenLastCalledWith(true);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('a pre-activation handle failure leaves the tap gesture free to open the drawer', async () => {
+  const panSpy = jest.spyOn(Gesture, 'Pan');
+  const tapSpy = jest.spyOn(Gesture, 'Tap');
+  const progress = { value: 0.2 } as SharedValue<number>;
+  const onDragStart = jest.fn();
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PadOverlay
+        width={320}
+        scale={1}
+        drawerProgress={progress}
+        sheetHeight={100}
+        onDrawerDragStart={onDragStart}
+        onDrawerSettle={onSettle}
+      />,
+    ));
+  });
+
+  const panHandlers = panSpy.mock.results[0].value.handlers;
+  const tapHandlers = tapSpy.mock.results[0].value.handlers;
+  panHandlers.onFinalize({}, false);
+  expect(progress.value).toBe(0.2);
+  expect(onSettle).not.toHaveBeenCalled();
+
+  tapHandlers.onEnd({}, true);
+
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenLastCalledWith(true);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('the Open apps button opens once from accessibility activation or a touch tap', async () => {
+  const tapSpy = jest.spyOn(Gesture, 'Tap');
+  const progress = { value: 0 } as SharedValue<number>;
+  const onDragStart = jest.fn();
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PadOverlay
+        width={320}
+        scale={1}
+        drawerProgress={progress}
+        sheetHeight={100}
+        onDrawerDragStart={onDragStart}
+        onDrawerSettle={onSettle}
+      />,
+    ));
+  });
+
+  const handle = renderer.root.findByProps({ accessibilityLabel: 'Open apps' });
+  expect(handle.props.accessibilityRole).toBe('button');
+  expect(handle.props.accessibilityActions).toEqual([{ name: 'activate', label: 'Open apps' }]);
+  expect(typeof handle.props.onAccessibilityAction).toBe('function');
+  expect(typeof handle.props.onAccessibilityTap).toBe('function');
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'longpress' } }));
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  progress.value = 0;
+  onDragStart.mockClear();
+  onSettle.mockClear();
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityTap());
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  progress.value = 0;
+  onDragStart.mockClear();
+  onSettle.mockClear();
+  tapSpy.mock.results[0].value.handlers.onEnd({}, true);
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('a cancelled header dismissal restores the open drawer once, while successful dismissal stays closed', async () => {
+  const panSpy = jest.spyOn(Gesture, 'Pan');
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  const progress = { value: 1 } as SharedValue<number>;
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <AppDrawer
+        open
+        active={false}
+        progress={progress}
+        sheetHeight={200}
+        width={360}
+        left={0}
+        scale={1}
+        device={device}
+        onSettle={onSettle}
+      />,
+    ));
+  });
+
+  const handlers = panSpy.mock.results[0].value.handlers;
+  handlers.onStart({});
+  handlers.onUpdate({ translationY: 100 });
+  handlers.onEnd({ velocityY: 0 }, false);
+  expect(onSettle).not.toHaveBeenCalled();
+  handlers.onFinalize({}, false);
+
+  expect(progress.value).toBe(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenLastCalledWith(true);
+
+  progress.value = 1;
+  onSettle.mockClear();
+  handlers.onStart({});
+  handlers.onUpdate({ translationY: 100 });
+  handlers.onEnd({ velocityY: 900 }, true);
+  handlers.onFinalize({}, true);
+
+  expect(progress.value).toBe(0);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenLastCalledWith(false);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('a header pan that fails before activation leaves the open animation untouched', async () => {
+  const panSpy = jest.spyOn(Gesture, 'Pan');
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  const progress = { value: 0.65 } as SharedValue<number>;
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <AppDrawer
+        open
+        active={false}
+        progress={progress}
+        sheetHeight={200}
+        width={360}
+        left={0}
+        scale={1}
+        device={device}
+        onSettle={onSettle}
+      />,
+    ));
+  });
+
+  panSpy.mock.results[0].value.handlers.onFinalize({}, false);
+
+  expect(progress.value).toBe(0.65);
+  expect(onSettle).not.toHaveBeenCalled();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('animated buttons support native accessibility clicks and respect disabled state', async () => {
+  const onPress = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PressableScale accessibilityLabel="Settings" onPress={onPress}>Settings</PressableScale>,
+    ));
+  });
+  const button = () => renderer.root.find(node => node.props.accessibilityLabel === 'Settings' && typeof node.props.onAccessibilityAction === 'function');
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  expect(onPress).toHaveBeenCalledTimes(1);
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+  expect(onPress).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.update(safeArea(
+    <PressableScale accessibilityLabel="Settings" onPress={onPress} disabled>Settings</PressableScale>,
+  )));
+  expect(button().props.accessibilityState).toEqual({ disabled: true });
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  button().props.onAccessibilityTap();
+  expect(onPress).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});

@@ -131,8 +131,8 @@ class AppleTVService : Service() {
         override fun onTextInputRequested(current: String?, focused: Boolean) {
             subscribers.forEach { it.onTextInputRequested(current, focused) }
         }
-        override fun onAppsChanged(apps: List<AppInfo>) {
-            subscribers.forEach { it.onAppsChanged(apps) }
+        override fun onAppsChanged(deviceId: String, apps: List<AppInfo>) {
+            subscribers.forEach { it.onAppsChanged(deviceId, apps) }
         }
     }
 

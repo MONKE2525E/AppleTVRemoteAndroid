@@ -29,6 +29,13 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
   const [pin, setPin] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
+  // Lets the user leave a failed reconnect to pick another TV without forgetting this one.
+  const [browseInstead, setBrowseInstead] = useState(false);
+  const failedDeviceId = connection.state === 'failed' ? connection.device?.id ?? null : null;
+
+  useEffect(() => {
+    setBrowseInstead(false);
+  }, [connection.state, failedDeviceId]);
 
   const appleTvs = useMemo(
     () => devices.filter(d => !d.model || d.model.startsWith('AppleTV') || !d.model.startsWith('AudioAccessory')),
@@ -55,20 +62,77 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
     );
   }
 
-  if (connection.state === 'failed') {
+  if (connection.state === 'failed' && !browseInstead) {
     const { device, reason, stalePairing, canWake } = connection;
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Couldn't connect{device ? ` to ${device.name}` : ''}</Text>
+        {!stalePairing && (
+          <Text style={styles.hint}>Make sure the TV is on and your phone is on the same Wi-Fi network.</Text>
+        )}
         <Text style={styles.status}>{reason}</Text>
+        {browseError ? <Text style={styles.error}>{browseError}</Text> : null}
         {canWake && device && (
-          <PressableScale style={styles.primaryButton} onPress={() => commands.connect(device.id)}>
-            <Text style={styles.primaryButtonLabel}>Retry</Text>
+          <PressableScale
+            disabled={busyId != null}
+            style={styles.primaryButton}
+            onPress={async () => {
+              setBusyId(device.id);
+              setBrowseError(null);
+              try {
+                await commands.connect(device.id);
+              } catch (e) {
+                setBrowseError((e as Error).message ?? 'Could not reconnect to this TV.');
+              } finally {
+                setBusyId(null);
+              }
+            }}
+          >
+            <Text style={styles.primaryButtonLabel}>{busyId === device.id ? 'Retrying…' : 'Retry'}</Text>
           </PressableScale>
         )}
-        {stalePairing && device && (
-          <PressableScale style={styles.secondaryButton} onPress={() => commands.forgetDevice(device.id)}>
-            <Text style={styles.secondaryButtonLabel}>Forget &amp; Re-pair</Text>
+        <PressableScale
+          disabled={busyId != null}
+          accessibilityLabel="Choose another TV"
+          style={styles.secondaryButton}
+          onPress={async () => {
+            setBusyId('__browse_action__');
+            setBrowseError(null);
+            try {
+              await commands.disconnect();
+              setBrowseInstead(true);
+              commands.startDiscovery();
+            } catch (e) {
+              setBrowseError((e as Error).message ?? 'Could not stop reconnecting to this TV.');
+            } finally {
+              setBusyId(null);
+            }
+          }}
+        >
+          <Text style={styles.secondaryButtonLabel}>
+            {busyId === '__browse_action__' ? 'Stopping reconnect…' : 'Choose another TV'}
+          </Text>
+        </PressableScale>
+        {device && (
+          <PressableScale
+            disabled={busyId != null}
+            accessibilityLabel={`Forget ${device.name}`}
+            style={styles.secondaryButton}
+            onPress={async () => {
+              setBusyId(device.id);
+              try {
+                await commands.forgetDevice(device.id);
+                commands.startDiscovery();
+              } catch (e) {
+                setBrowseError((e as Error).message ?? 'Could not forget this TV.');
+              } finally {
+                setBusyId(null);
+              }
+            }}
+          >
+            <Text style={[styles.secondaryButtonLabel, !stalePairing && styles.destructiveLabel]}>
+              {busyId === device.id ? 'Working…' : stalePairing ? 'Forget & Re-pair' : `Forget ${device.name}`}
+            </Text>
           </PressableScale>
         )}
       </View>
@@ -129,6 +193,16 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
     <View style={styles.container}>
       <Text style={styles.title}>Apple TVs and Roku TVs on your network</Text>
       <Pressable accessibilityRole="button" onPress={openSettings} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Settings</Text></Pressable>
+      {connection.state === 'failed' && connection.device ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={busyId != null}
+          onPress={() => setBrowseInstead(false)}
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonLabel}>{`Back to ${connection.device.name}`}</Text>
+        </Pressable>
+      ) : null}
       {appleTvs.length === 0 && (
         <View style={styles.searching}>
           <ActivityIndicator color={COLORS.icon} />
@@ -191,6 +265,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
+  hint: {
+    color: COLORS.icon,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  destructiveLabel: {
+    color: '#FF453A',
+  },
   error: {
     color: '#FF453A',
     fontSize: 13,
@@ -237,12 +319,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   secondaryButton: {
+    backgroundColor: COLORS.controlFill,
     paddingHorizontal: 28,
     paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 120,
   },
   secondaryButtonLabel: {
-    color: COLORS.accent,
+    color: COLORS.icon,
     fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
   },
 });
