@@ -56,6 +56,13 @@ class AppleTVController(
 
     var listener: AppleTVListener? = null
 
+    @Volatile private var connectionState: ConnectionState = ConnectionState.Disconnected
+
+    private fun publishConnection(state: ConnectionState) {
+        connectionState = state
+        listener?.onConnectionChanged(state)
+    }
+
     private val devicesById = ConcurrentHashMap<String, AppleTvDevice>()
 
     @Volatile private var remote: AppleTvRemote? = null
@@ -194,7 +201,7 @@ class AppleTVController(
         store.saveAirPlay(device.credentialKey, credentials)
         closeAirPlayPairing()
         startNowPlaying(device)
-        listener?.onConnectionChanged(ConnectionState.Connected(device, true))
+        publishConnection(ConnectionState.Connected(device, true))
         return true
     }
 
@@ -213,7 +220,27 @@ class AppleTVController(
             ?: store.loadLastDevice()?.takeIf { it.credentialKey == deviceId }
                 ?.also { devicesById[deviceId] = it }
 
-    suspend fun connect(deviceId: String) = connectionGate.withLock { connectDevice(deviceId) }
+    suspend fun connect(deviceId: String) = connectionGate.withLock {
+        val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        try {
+            retryConnection(beforeRetry = {
+                // Saved Companion ports and addresses can change while the app is closed.
+                if (!device.isRoku) {
+                    try {
+                        discovery.scan(3000) { found -> devicesById[found.credentialKey] = found }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { Log.w(TAG, "Reconnect discovery failed", e) }
+                }
+            }) { connectDevice(deviceId) }
+        } catch (e: Exception) {
+            if (e is CancellationException && e !is TimeoutCancellationException) throw e
+            val stale = e is HapException || (!device.isRoku && store.loadCompanion(deviceId) == null)
+            publishConnection(ConnectionState.Failed(
+                deviceFor(deviceId) ?: device, e.message ?: "connect failed", stale, !stale,
+            ))
+            throw e
+        }
+    }
 
     private suspend fun connectDevice(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
@@ -238,7 +265,7 @@ class AppleTVController(
         previous?.onDisconnect = null
         runCatching { previous?.close() }
 
-        listener?.onConnectionChanged(ConnectionState.Connecting(device))
+        publishConnection(ConnectionState.Connecting(device))
         val r = AppleTvRemote(device.address, device.port, credentials, scope, deviceName)
         try {
             r.onCapabilities = { caps ->
@@ -257,7 +284,7 @@ class AppleTVController(
             currentDevice = device
             store.saveLastDevice(device)
             reconnectCount = 0
-            listener?.onConnectionChanged(ConnectionState.Connected(device, store.isAirPlayPaired(device.credentialKey)))
+            publishConnection(ConnectionState.Connected(device, store.isAirPlayPaired(device.credentialKey)))
             startNowPlaying(device)
         } catch (e: Exception) {
             r.onDisconnect = null
@@ -269,15 +296,12 @@ class AppleTVController(
             // the next attempt pairs fresh instead of failing forever.
             val stale = e is HapException
             if (stale) store.forgetDevice(device.credentialKey)
-            listener?.onConnectionChanged(
-                ConnectionState.Failed(device, e.message ?: "connect failed", stalePairing = stale, canWake = !stale),
-            )
             throw e
         }
     }
 
     private suspend fun connectRoku(device: AppleTvDevice) {
-        listener?.onConnectionChanged(ConnectionState.Connecting(device))
+        publishConnection(ConnectionState.Connecting(device))
         try {
             val candidate = RokuRemote(device)
             val verified = candidate.verify()
@@ -297,7 +321,7 @@ class AppleTVController(
             lastCapabilities = MediaCapabilities(play = true, pause = true, volume = true)
             listener?.onCapabilitiesChanged(lastCapabilities!!)
             listener?.onPlaybackChanged(null)
-            listener?.onConnectionChanged(ConnectionState.Connected(verified, true))
+            publishConnection(ConnectionState.Connected(verified, true))
             nowPlayingJob = scope.launch {
                 var failures = 0
                 while (isActive && roku === candidate) {
@@ -319,7 +343,6 @@ class AppleTVController(
                 }
             }
         } catch (e: Exception) {
-            listener?.onConnectionChanged(ConnectionState.Failed(device, e.message ?: "Roku connection failed", false, true))
             throw e
         }
     }
@@ -329,6 +352,7 @@ class AppleTVController(
     private fun handleDisconnect(device: AppleTvDevice, error: Throwable?) {
         if (currentDevice?.credentialKey != device.credentialKey) return
         remote = null
+        publishConnection(ConnectionState.Connecting(device))
         Log.w(TAG, "companion dropped (${error?.message ?: "no cause"}); retrying")
         autoReconnectJob?.cancel()
         autoReconnectJob = scope.launch {
@@ -352,23 +376,25 @@ class AppleTVController(
         }
     }
 
-    suspend fun disconnect() = connectionGate.withLock {
+    suspend fun disconnect() {
         autoReconnectJob?.cancel()
-        nowPlayingJob?.cancel()
-        currentDevice = null
-        remote?.onDisconnect = null
-        ap2?.onDisconnect = null
-        runCatching { remote?.close() }
-        runCatching { ap2?.close() }
-        remote = null
-        roku = null
-        ap2 = null
-        currentDevice = null
-        lastNowPlaying = null
-        store.clearLastDevice()
-        lastCapabilities = null
-        listener?.onPlaybackChanged(null)
-        listener?.onConnectionChanged(ConnectionState.Disconnected)
+        connectionGate.withLock {
+            nowPlayingJob?.cancel()
+            currentDevice = null
+            remote?.onDisconnect = null
+            ap2?.onDisconnect = null
+            runCatching { remote?.close() }
+            runCatching { ap2?.close() }
+            remote = null
+            roku = null
+            ap2 = null
+            currentDevice = null
+            lastNowPlaying = null
+            store.clearLastDevice()
+            lastCapabilities = null
+            listener?.onPlaybackChanged(null)
+            publishConnection(ConnectionState.Disconnected)
+        }
     }
 
     suspend fun forgetDevice(deviceId: String) {
@@ -383,14 +409,21 @@ class AppleTVController(
     }
 
     fun autoReconnectIfPossible() {
+        if (isConnected()) return
+        if (autoReconnectJob?.isActive == true) {
+            if (connectionState !is ConnectionState.Failed) return
+            // Foregrounding should not wait for a dropped session's long backoff.
+            autoReconnectJob?.cancel()
+        }
         val device = store.loadLastDevice() ?: return
         devicesById[device.credentialKey] = device
         currentDevice = device
-        scope.launch {
+        publishConnection(ConnectionState.Connecting(device))
+        autoReconnectJob = scope.launch {
             try { connect(device.credentialKey) }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!device.isRoku && e !is HapException) handleDisconnect(device, e)
+                Log.w(TAG, "Saved TV connection failed after retries", e)
             }
         }
     }
@@ -401,10 +434,7 @@ class AppleTVController(
     fun snapshotCapabilities(): MediaCapabilities? = lastCapabilities
 
     fun snapshotConnection(): ConnectionState {
-        val live = currentDevice
-        if ((remote != null || roku != null) && live != null) {
-            return ConnectionState.Connected(live, live.isRoku || store.isAirPlayPaired(live.credentialKey))
-        }
+        if (connectionState != ConnectionState.Disconnected) return connectionState
         val last = store.loadLastDevice() ?: return ConnectionState.Disconnected
         return ConnectionState.Connecting(last)
     }
@@ -442,7 +472,7 @@ class AppleTVController(
                     Log.w(TAG, "now-playing tunnel failed", e)
                     if (e is HapException) {
                         store.forgetAirPlay(device.credentialKey)
-                        listener?.onConnectionChanged(ConnectionState.Connected(device, false))
+                        publishConnection(ConnectionState.Connected(device, false))
                         break
                     }
                 } finally {

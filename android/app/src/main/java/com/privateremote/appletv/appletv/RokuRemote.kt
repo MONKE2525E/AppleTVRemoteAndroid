@@ -23,8 +23,18 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 val AppleTvDevice.isRoku: Boolean get() = identifier?.startsWith("roku:") == true
 
+class RokuHttpException(val statusCode: Int, message: String) : IOException(message) {
+    val isRetryable: Boolean
+        get() = statusCode == 408 || statusCode == 429 ||
+            (statusCode in 500..599 && statusCode !in DEFINITIVE_SERVER_ERRORS)
+
+    private companion object {
+        val DEFINITIVE_SERVER_ERRORS = setOf(501, 505, 506, 508, 510, 511)
+    }
+}
+
 /** Roku ECP stays in the integration layer; it does not use Apple's pairing protocol. */
-class RokuRemote(private val device: AppleTvDevice) {
+class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8060) {
     suspend fun press(name: String) {
         val key = when (name.uppercase()) {
             "UP" -> "Up"
@@ -50,7 +60,7 @@ class RokuRemote(private val device: AppleTvDevice) {
     suspend fun verify(): AppleTvDevice = parseDevice(request("query/device-info"), device.address)
 
     private suspend fun request(path: String, method: String = "GET"): String = withContext(Dispatchers.IO) {
-        val connection = URL("http://${device.address}:8060/$path").openConnection() as HttpURLConnection
+        val connection = URL("http://${device.address}:$ecpPort/$path").openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 3000
             connection.readTimeout = 3000
@@ -63,7 +73,7 @@ class RokuRemote(private val device: AppleTvDevice) {
             }
             val status = connection.responseCode
             if (status !in 200..299) {
-                throw IOException(if (status == 401 || status == 403)
+                throw RokuHttpException(status, if (status == 401 || status == 403)
                     "Enable Control by mobile apps in your Roku's advanced system settings."
                     else "Roku returned HTTP $status")
             }

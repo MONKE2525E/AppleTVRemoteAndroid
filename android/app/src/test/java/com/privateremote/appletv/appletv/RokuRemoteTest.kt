@@ -1,9 +1,14 @@
 package com.privateremote.appletv.appletv
 
+import dev.atvremote.protocol.discovery.AppleTvDevice
 import dev.atvremote.protocol.mrp.PlaybackState
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.io.IOException
+import java.net.ServerSocket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class RokuRemoteTest {
     @Test fun `document types cannot introduce entities into Roku responses`() {
@@ -38,5 +43,35 @@ class RokuRemoteTest {
         assertEquals(first.credentialKey, moved.credentialKey)
         assertEquals("Bedroom", first.name)
         assertEquals(8060, first.port)
+    }
+
+    @Test fun `Roku HTTP errors retain their status and permission message`() {
+        val server = ServerSocket(0)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val responseSent = executor.submit {
+                server.accept().use { client ->
+                    val request = client.getInputStream().bufferedReader()
+                    while (request.readLine()?.isNotEmpty() == true) { }
+                    client.getOutputStream().apply {
+                        write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                        flush()
+                    }
+                }
+            }
+            val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+            val error = assertThrows(RokuHttpException::class.java) {
+                runBlocking { RokuRemote(device, server.localPort).verify() }
+            }
+            responseSent.get(3, TimeUnit.SECONDS)
+            assertEquals(403, error.statusCode)
+            assertEquals(
+                "Enable Control by mobile apps in your Roku's advanced system settings.",
+                error.message,
+            )
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
     }
 }

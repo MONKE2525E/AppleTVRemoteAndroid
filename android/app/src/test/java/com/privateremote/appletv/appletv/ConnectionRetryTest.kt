@@ -1,0 +1,151 @@
+package com.privateremote.appletv.appletv
+
+import dev.atvremote.protocol.companion.ProtocolException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import java.io.IOException
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ConnectionRetryTest {
+    @Test fun `temporary failures recover without reaching the caller`() = runTest {
+        val attempts = mutableListOf<Long>()
+        var refreshes = 0
+        val result = retryConnection(beforeRetry = { refreshes++ }) {
+            attempts.add(testScheduler.currentTime)
+            if (attempts.size < 3) throw IOException("TV waking up")
+            "connected"
+        }
+        assertEquals("connected", result)
+        assertEquals(listOf(0L, 1000L, 3000L), attempts)
+        assertEquals(2, refreshes)
+    }
+
+    @Test fun `exhaustion returns the last failure after exactly three attempts`() = runTest {
+        var attempts = 0
+        val failure = IOException("offline")
+        try {
+            retryConnection { attempts++; throw failure }
+            fail<Unit>("Expected connection failure")
+        } catch (e: IOException) { assertSame(failure, e) }
+        assertEquals(3, attempts)
+        assertEquals(3000L, testScheduler.currentTime)
+    }
+
+    @Test fun `pairing and configuration failures stop immediately`() = runTest {
+        var attempts = 0
+        try {
+            retryConnection { attempts++; throw IllegalStateException("Not paired") }
+            fail<Unit>("Expected pairing failure")
+        } catch (_: IllegalStateException) { }
+        assertEquals(1, attempts)
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test fun `a timed out attempt can recover`() = runTest {
+        var attempts = 0
+        retryConnection {
+            if (++attempts == 1) withTimeout(100) { awaitCancellation() }
+        }
+        assertEquals(2, attempts)
+    }
+
+    @Test fun `a Companion response timeout can recover`() = runTest {
+        var attempts = 0
+        val result = retryConnection {
+            if (++attempts == 1) {
+                throw ProtocolException("timed out waiting for response to _sessionStart")
+            }
+            "connected"
+        }
+        assertEquals("connected", result)
+        assertEquals(2, attempts)
+        assertEquals(1000L, testScheduler.currentTime)
+    }
+
+    @Test fun `repeated Companion response timeouts exhaust after three attempts`() = runTest {
+        var attempts = 0
+        val timeout = ProtocolException("timed out waiting for response to _sessionStart")
+        try {
+            retryConnection { attempts++; throw timeout }
+            fail<Unit>("Expected response timeout")
+        } catch (e: ProtocolException) { assertSame(timeout, e) }
+        assertEquals(3, attempts)
+        assertEquals(3000L, testScheduler.currentTime)
+    }
+
+    @Test fun `unrelated protocol errors stop immediately`() = runTest {
+        var attempts = 0
+        val failure = ProtocolException("invalid response payload")
+        try {
+            retryConnection { attempts++; throw failure }
+            fail<Unit>("Expected protocol failure")
+        } catch (e: ProtocolException) { assertSame(failure, e) }
+        assertEquals(1, attempts)
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test fun `permanent Roku HTTP statuses stop without backoff or discovery refresh`() = runTest {
+        for (status in listOf(301, 400, 401, 403, 404, 501, 505, 506, 508, 510, 511)) {
+            var attempts = 0
+            var refreshes = 0
+            val failure = RokuHttpException(status, "Roku returned HTTP $status")
+            try {
+                retryConnection(beforeRetry = { refreshes++ }) { attempts++; throw failure }
+                fail<Unit>("Expected HTTP $status failure")
+            } catch (e: RokuHttpException) {
+                assertSame(failure, e)
+            }
+            assertEquals(1, attempts, "HTTP $status attempts")
+            assertEquals(0, refreshes, "HTTP $status discovery refreshes")
+            assertEquals(0L, testScheduler.currentTime, "HTTP $status backoff")
+        }
+    }
+
+    @Test fun `temporary Roku HTTP statuses retry`() = runTest {
+        for (status in listOf(408, 429, 500, 502, 503, 504, 507, 598, 599)) {
+            var attempts = 0
+            var refreshes = 0
+            val startTime = testScheduler.currentTime
+            val result = retryConnection(beforeRetry = { refreshes++ }) {
+                if (++attempts == 1) throw RokuHttpException(status, "Roku returned HTTP $status")
+                "connected"
+            }
+            assertEquals("connected", result, "HTTP $status result")
+            assertEquals(2, attempts, "HTTP $status attempts")
+            assertEquals(1, refreshes, "HTTP $status discovery refreshes")
+            assertEquals(startTime + 1000L, testScheduler.currentTime, "HTTP $status backoff")
+        }
+    }
+
+    @Test fun `cancelling during backoff prevents further connections`() = runTest {
+        var attempts = 0
+        var refreshes = 0
+        val job = launch {
+            retryConnection(beforeRetry = { refreshes++ }) { attempts++; throw IOException("offline") }
+        }
+        runCurrent()
+        job.cancel()
+        advanceTimeBy(5000)
+        runCurrent()
+        assertTrue(job.isCancelled)
+        assertEquals(1, attempts)
+        assertEquals(0, refreshes)
+    }
+
+    @Test fun `cancellation from a connection is never retried`() = runTest {
+        var attempts = 0
+        try {
+            retryConnection { attempts++; throw CancellationException("Stopped") }
+            fail<Unit>("Expected cancellation")
+        } catch (_: CancellationException) { }
+        assertEquals(1, attempts)
+    }
+}

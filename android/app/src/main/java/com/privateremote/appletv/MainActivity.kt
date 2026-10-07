@@ -34,6 +34,7 @@ class MainActivity : ReactActivity() {
   private val connection = object : ServiceConnection {
     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
       serviceBinder = service as AppleTVService.LocalBinder
+      serviceBinder?.getController()?.autoReconnectIfPossible()
       handleWidgetAction()
     }
     override fun onServiceDisconnected(name: ComponentName?) {
