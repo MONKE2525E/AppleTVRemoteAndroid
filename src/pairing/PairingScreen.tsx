@@ -71,32 +71,67 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
           <Text style={styles.hint}>Make sure the TV is on and your phone is on the same Wi-Fi network.</Text>
         )}
         <Text style={styles.status}>{reason}</Text>
+        {browseError ? <Text style={styles.error}>{browseError}</Text> : null}
         {canWake && device && (
-          <PressableScale style={styles.primaryButton} onPress={() => commands.connect(device.id)}>
-            <Text style={styles.primaryButtonLabel}>Retry</Text>
+          <PressableScale
+            disabled={busyId != null}
+            style={styles.primaryButton}
+            onPress={async () => {
+              setBusyId(device.id);
+              setBrowseError(null);
+              try {
+                await commands.connect(device.id);
+              } catch (e) {
+                setBrowseError((e as Error).message ?? 'Could not reconnect to this TV.');
+              } finally {
+                setBusyId(null);
+              }
+            }}
+          >
+            <Text style={styles.primaryButtonLabel}>{busyId === device.id ? 'Retrying…' : 'Retry'}</Text>
           </PressableScale>
         )}
         <PressableScale
+          disabled={busyId != null}
           accessibilityLabel="Choose another TV"
           style={styles.secondaryButton}
-          onPress={() => {
-            setBrowseInstead(true);
-            commands.startDiscovery();
+          onPress={async () => {
+            setBusyId('__browse_action__');
+            setBrowseError(null);
+            try {
+              await commands.disconnect();
+              setBrowseInstead(true);
+              commands.startDiscovery();
+            } catch (e) {
+              setBrowseError((e as Error).message ?? 'Could not stop reconnecting to this TV.');
+            } finally {
+              setBusyId(null);
+            }
           }}
         >
-          <Text style={styles.secondaryButtonLabel}>Choose another TV</Text>
+          <Text style={styles.secondaryButtonLabel}>
+            {busyId === '__browse_action__' ? 'Stopping reconnect…' : 'Choose another TV'}
+          </Text>
         </PressableScale>
         {device && (
           <PressableScale
+            disabled={busyId != null}
             accessibilityLabel={`Forget ${device.name}`}
             style={styles.secondaryButton}
-            onPress={() => {
-              commands.startDiscovery();
-              commands.forgetDevice(device.id);
+            onPress={async () => {
+              setBusyId(device.id);
+              try {
+                await commands.forgetDevice(device.id);
+                commands.startDiscovery();
+              } catch (e) {
+                setBrowseError((e as Error).message ?? 'Could not forget this TV.');
+              } finally {
+                setBusyId(null);
+              }
             }}
           >
             <Text style={[styles.secondaryButtonLabel, !stalePairing && styles.destructiveLabel]}>
-              {stalePairing ? 'Forget & Re-pair' : `Forget ${device.name}`}
+              {busyId === device.id ? 'Working…' : stalePairing ? 'Forget & Re-pair' : `Forget ${device.name}`}
             </Text>
           </PressableScale>
         )}
@@ -159,7 +194,12 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
       <Text style={styles.title}>Apple TVs and Roku TVs on your network</Text>
       <Pressable accessibilityRole="button" onPress={openSettings} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Settings</Text></Pressable>
       {connection.state === 'failed' && connection.device ? (
-        <Pressable accessibilityRole="button" onPress={() => setBrowseInstead(false)} style={styles.secondaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          disabled={busyId != null}
+          onPress={() => setBrowseInstead(false)}
+          style={styles.secondaryButton}
+        >
           <Text style={styles.secondaryButtonLabel}>{`Back to ${connection.device.name}`}</Text>
         </Pressable>
       ) : null}

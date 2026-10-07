@@ -33,6 +33,7 @@ function StoreBackedPairingScreen() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(NativeAppleTV.disconnect).mockReset().mockResolvedValue(undefined);
   appleTVStore.setDevices([]);
   appleTVStore.setApps([]);
   appleTVStore.setConnection({ state: 'disconnected' });
@@ -51,8 +52,61 @@ test('an unreachable TV can be skipped or forgotten instead of only retried', as
   expect(texts(renderer)).toEqual(
     expect.arrayContaining(['Apple TVs and Roku TVs on your network', 'Back to Bedroom Roku']),
   );
+  expect(NativeAppleTV.disconnect).toHaveBeenCalledTimes(1);
   expect(NativeAppleTV.startDiscovery).toHaveBeenCalled();
 
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('choosing another TV waits for reconnect cancellation before showing the device list', async () => {
+  let finishDisconnect!: () => void;
+  const disconnect = new Promise<void>(resolve => { finishDisconnect = resolve; });
+  jest.mocked(NativeAppleTV.disconnect).mockReturnValue(disconnect);
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><PairingScreen devices={[otherTv]} connection={failed} /></GestureHandlerRootView>,
+    );
+  });
+  const discoveryCallsBefore = jest.mocked(NativeAppleTV.startDiscovery).mock.calls.length;
+
+  let switching!: Promise<void>;
+  await ReactTestRenderer.act(() => {
+    switching = press(renderer, 'Choose another TV') as Promise<void>;
+  });
+
+  expect(texts(renderer)).toContain('Stopping reconnect…');
+  expect(texts(renderer)).not.toContain('Apple TVs and Roku TVs on your network');
+  expect(NativeAppleTV.startDiscovery).toHaveBeenCalledTimes(discoveryCallsBefore);
+
+  await ReactTestRenderer.act(async () => {
+    finishDisconnect();
+    await switching;
+  });
+
+  expect(texts(renderer)).toContain('Apple TVs and Roku TVs on your network');
+  expect(NativeAppleTV.startDiscovery).toHaveBeenCalledTimes(discoveryCallsBefore + 1);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('a failed disconnect leaves TV browsing unavailable and allows another attempt', async () => {
+  jest.mocked(NativeAppleTV.disconnect).mockRejectedValueOnce(new Error('Service unavailable'));
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><PairingScreen devices={[otherTv]} connection={failed} /></GestureHandlerRootView>,
+    );
+  });
+  const discoveryCallsBefore = jest.mocked(NativeAppleTV.startDiscovery).mock.calls.length;
+  await ReactTestRenderer.act(() => press(renderer, 'Choose another TV'));
+  expect(texts(renderer)).toContain('Service unavailable');
+  expect(texts(renderer)).not.toContain('Apple TVs and Roku TVs on your network');
+  expect(NativeAppleTV.startDiscovery).toHaveBeenCalledTimes(discoveryCallsBefore);
+  const choose = renderer.root.find(node => node.props.accessibilityLabel === 'Choose another TV' && typeof node.props.onPress === 'function');
+  expect(choose.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => press(renderer, 'Choose another TV'));
+  expect(texts(renderer)).toContain('Apple TVs and Roku TVs on your network');
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 

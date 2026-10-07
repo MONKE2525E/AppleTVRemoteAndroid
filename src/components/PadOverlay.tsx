@@ -51,6 +51,12 @@ export function PadOverlay({
     runOnJS(onDrawerSettle)(open);
   };
 
+  const openFromAccessibility = () => {
+    onDrawerDragStart();
+    drawerProgress.value = withSpring(1, { ...DRAWER_SPRING, velocity: 0 });
+    onDrawerSettle(true);
+  };
+
   // The sheet tracks the finger 1:1 from the moment the pull activates.
   const pull = Gesture.Pan()
     .activeOffsetY(-6)
@@ -108,6 +114,11 @@ export function PadOverlay({
           accessible
           accessibilityRole="button"
           accessibilityLabel="Open apps"
+          accessibilityActions={[{ name: 'activate', label: 'Open apps' }]}
+          onAccessibilityAction={event => {
+            if (event.nativeEvent.actionName === 'activate') openFromAccessibility();
+          }}
+          onAccessibilityTap={openFromAccessibility}
           style={[styles.handle, { width: Math.min(width, 140 * scale), height: handleHeight + 8 * scale }]}
         >
           <Animated.View style={chevronStyle}>

@@ -104,7 +104,13 @@ export const appleTV = {
       appleTVStore.setConnection({ state: 'disconnected' });
       return Promise.resolve();
     }
-    return soft(NativeAppleTV.disconnect(), 'disconnect');
+    return NativeAppleTV.disconnect().then(
+      () => undefined,
+      error => {
+        captureCommandError('disconnect', error);
+        throw error;
+      },
+    );
   },
   forgetDevice: (deviceId: string) => {
     appleTVStore.removePairedDevice(deviceId);

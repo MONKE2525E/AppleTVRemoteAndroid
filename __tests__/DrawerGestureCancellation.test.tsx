@@ -147,6 +147,59 @@ test('a pre-activation handle failure leaves the tap gesture free to open the dr
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('the Open apps button opens once from accessibility activation or a touch tap', async () => {
+  const tapSpy = jest.spyOn(Gesture, 'Tap');
+  const progress = { value: 0 } as SharedValue<number>;
+  const onDragStart = jest.fn();
+  const onSettle = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PadOverlay
+        width={320}
+        scale={1}
+        drawerProgress={progress}
+        sheetHeight={100}
+        onDrawerDragStart={onDragStart}
+        onDrawerSettle={onSettle}
+      />,
+    ));
+  });
+
+  const handle = renderer.root.findByProps({ accessibilityLabel: 'Open apps' });
+  expect(handle.props.accessibilityRole).toBe('button');
+  expect(handle.props.accessibilityActions).toEqual([{ name: 'activate', label: 'Open apps' }]);
+  expect(typeof handle.props.onAccessibilityAction).toBe('function');
+  expect(typeof handle.props.onAccessibilityTap).toBe('function');
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'longpress' } }));
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  progress.value = 0;
+  onDragStart.mockClear();
+  onSettle.mockClear();
+  await ReactTestRenderer.act(() => handle.props.onAccessibilityTap());
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  progress.value = 0;
+  onDragStart.mockClear();
+  onSettle.mockClear();
+  tapSpy.mock.results[0].value.handlers.onEnd({}, true);
+  expect(progress.value).toBe(1);
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+  expect(onSettle).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('a cancelled header dismissal restores the open drawer once, while successful dismissal stays closed', async () => {
   const panSpy = jest.spyOn(Gesture, 'Pan');
   appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
