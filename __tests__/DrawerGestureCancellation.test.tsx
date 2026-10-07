@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { SharedValue } from 'react-native-reanimated';
 import { AppDrawer } from '../src/components/AppDrawer';
 import { PadOverlay } from '../src/components/PadOverlay';
+import { PressableScale } from '../src/components/PressableScale';
 import { appleTVStore } from '../src/appletv/store';
 import type { AppleTVDeviceInfo } from '../src/appletv/types';
 
@@ -276,5 +277,28 @@ test('a header pan that fails before activation leaves the open animation untouc
   expect(progress.value).toBe(0.65);
   expect(onSettle).not.toHaveBeenCalled();
 
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('animated buttons support native accessibility clicks and respect disabled state', async () => {
+  const onPress = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(safeArea(
+      <PressableScale accessibilityLabel="Settings" onPress={onPress}>Settings</PressableScale>,
+    ));
+  });
+  const button = () => renderer.root.find(node => node.props.accessibilityLabel === 'Settings' && typeof node.props.onAccessibilityAction === 'function');
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  expect(onPress).toHaveBeenCalledTimes(1);
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+  expect(onPress).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.update(safeArea(
+    <PressableScale accessibilityLabel="Settings" onPress={onPress} disabled>Settings</PressableScale>,
+  )));
+  expect(button().props.accessibilityState).toEqual({ disabled: true });
+  button().props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  button().props.onAccessibilityTap();
+  expect(onPress).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
