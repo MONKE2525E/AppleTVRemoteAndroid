@@ -626,11 +626,14 @@ class AppleTVController(
     }
 
     suspend fun loadApps() {
-        val apps = command { listApps() }
+        val apps = roku?.apps() ?: command { listApps() }
         listener?.onAppsChanged(apps)
     }
 
-    suspend fun launchApp(bundleId: String) = command { launchApp(bundleId) }
+    suspend fun launchApp(bundleId: String) {
+        roku?.let { it.launch(bundleId); return }
+        command { launchApp(bundleId) }
+    }
 
     // ------------------------------------------------------- touch surface
 

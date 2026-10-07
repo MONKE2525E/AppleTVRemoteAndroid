@@ -39,4 +39,15 @@ class RokuRemoteTest {
         assertEquals("Bedroom", first.name)
         assertEquals(8060, first.port)
     }
+
+    @Test fun `Roku channels and TV inputs parse into launchable apps`() {
+        val apps = RokuRemote.parseApps("""
+            <apps>
+                <app id="12" type="appl" version="5.2.0">Netflix</app>
+                <app id="tvinput.hdmi1" type="tvin" version="1.0.0">HDMI 1</app>
+                <app id="" type="appl" version="1.0.0">Broken</app>
+            </apps>
+        """.trimIndent())
+        assertEquals(listOf("12" to "Netflix", "tvinput.hdmi1" to "HDMI 1"), apps.map { it.bundleId to it.name })
+    }
 }

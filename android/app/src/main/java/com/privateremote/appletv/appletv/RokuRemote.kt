@@ -3,6 +3,7 @@ package com.privateremote.appletv.appletv
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
+import dev.atvremote.protocol.companion.AppInfo
 import dev.atvremote.protocol.discovery.AppleTvDevice
 import dev.atvremote.protocol.mrp.NowPlaying
 import dev.atvremote.protocol.mrp.PlaybackState
@@ -19,6 +20,7 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.URLEncoder
 import javax.xml.parsers.DocumentBuilderFactory
 
 val AppleTvDevice.isRoku: Boolean get() = identifier?.startsWith("roku:") == true
@@ -46,6 +48,12 @@ class RokuRemote(private val device: AppleTvDevice) {
     }
 
     suspend fun playback(): NowPlaying = parsePlayback(request("query/media-player"))
+
+    suspend fun apps(): List<AppInfo> = parseApps(request("query/apps"))
+
+    suspend fun launch(appId: String) {
+        request("launch/${URLEncoder.encode(appId, "UTF-8")}", "POST")
+    }
 
     suspend fun verify(): AppleTvDevice = parseDevice(request("query/device-info"), device.address)
 
@@ -95,6 +103,16 @@ class RokuRemote(private val device: AppleTvDevice) {
                 address = address, port = 8060,
                 model = "Roku ${root.text("model-name") ?: "TV"}", identifier = "roku:$serial",
             )
+        }
+
+        /** Channels and TV inputs; `bundleId` carries the ECP app id used by `launch/{id}` and `query/icon/{id}`. */
+        fun parseApps(text: String): List<AppInfo> {
+            val nodes = xml(text).getElementsByTagName("app")
+            return (0 until nodes.length).mapNotNull { index ->
+                val app = nodes.item(index) as? Element ?: return@mapNotNull null
+                val id = app.getAttribute("id").trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                AppInfo(name = app.textContent.trim().ifEmpty { id }, bundleId = id)
+            }
         }
 
         fun parsePlayback(text: String): NowPlaying {

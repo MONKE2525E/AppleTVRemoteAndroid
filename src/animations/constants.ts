@@ -15,6 +15,8 @@ export const COLORS = {
   touchSurfaceBorder: 'rgba(255,255,255,0.10)',
   touchSurfaceHighlight: 'rgba(255,255,255,0.12)',
   separator: 'rgba(255,255,255,0.12)',
+  sheetFill: '#1C1C1E',
+  scrim: '#000000',
 } as const;
 
 /** Press-state feedback: quick, no bounce -- matches Apple's snappy control press. */
@@ -32,3 +34,14 @@ export const PRESS_TIMING = { duration: 90 };
 export const SELECTOR_SPRING = { damping: 26, stiffness: 260, mass: 0.6, overshootClamping: true };
 
 export const TOUCH_HIGHLIGHT_TIMING = { duration: 120 };
+
+/**
+ * App drawer sheet. Gesture release hands its velocity to this spring, so a
+ * flick carries straight into the settle; overshoot is clamped so the sheet
+ * never lifts off the bottom edge.
+ */
+export const DRAWER_SPRING = { damping: 28, stiffness: 240, mass: 0.7, overshootClamping: true };
+
+/** Share of the sheet a pull must cover (or a flick speed in px/s) to open or dismiss it. */
+export const DRAWER_COMMIT_FRACTION = 0.28;
+export const DRAWER_FLICK_VELOCITY = 650;
