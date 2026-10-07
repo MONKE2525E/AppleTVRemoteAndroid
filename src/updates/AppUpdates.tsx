@@ -84,5 +84,5 @@ const styles = StyleSheet.create({
   primary: { backgroundColor: COLORS.icon, padding: 14, borderRadius: 16, minHeight: 48 },
   primaryText: { color: COLORS.background, fontSize: 16, textAlign: 'center', fontWeight: '600' },
   button: { minHeight: 44, justifyContent: 'center' },
-  link: { color: COLORS.accent, fontSize: 16, textAlign: 'center' },
+  link: { color: COLORS.icon, fontSize: 16, fontWeight: '600', textAlign: 'center' },
 });

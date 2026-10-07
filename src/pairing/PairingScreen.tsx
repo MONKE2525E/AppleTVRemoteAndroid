@@ -271,12 +271,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   secondaryButton: {
+    backgroundColor: COLORS.controlFill,
     paddingHorizontal: 28,
     paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 120,
   },
   secondaryButtonLabel: {
-    color: COLORS.accent,
+    color: COLORS.icon,
     fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
   },
 });

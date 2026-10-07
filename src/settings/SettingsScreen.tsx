@@ -164,6 +164,8 @@ export function SettingsScreen() {
               <Switch
                 accessibilityLabel="Share crash reports"
                 value={shareDiagnostics}
+                trackColor={{ false: COLORS.controlFillPressed, true: '#30D158' }}
+                thumbColor={COLORS.icon}
                 onValueChange={value => { setShareDiagnostics(value); setAnalyticsEnabled(value); }}
               />
             </View>
@@ -194,7 +196,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   title: { color: COLORS.icon, fontSize: 28, fontWeight: '700' },
-  done: { color: COLORS.accent, fontSize: 17, fontWeight: '600' },
+  done: { color: COLORS.icon, fontSize: 17, fontWeight: '600' },
   content: { paddingHorizontal: 16, paddingBottom: 40, gap: 8 },
   sectionTitle: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 16, marginLeft: 4 },
   card: { backgroundColor: '#1C1C1E', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 4, marginTop: 6 },
@@ -205,9 +207,9 @@ const styles = StyleSheet.create({
   rowDetail: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 19, marginTop: 2 },
   status: { color: COLORS.textSecondary, fontSize: 15 },
   granted: { color: '#30D158' },
-  request: { backgroundColor: COLORS.accent, borderRadius: 16, paddingHorizontal: 16, minHeight: 36, justifyContent: 'center' },
-  requestLabel: { color: COLORS.icon, fontSize: 15, fontWeight: '600' },
-  link: { color: COLORS.accent, fontSize: 16 },
+  request: { backgroundColor: COLORS.icon, borderRadius: 16, paddingHorizontal: 16, minHeight: 36, justifyContent: 'center' },
+  requestLabel: { color: COLORS.background, fontSize: 15, fontWeight: '600' },
+  link: { color: COLORS.icon, fontSize: 16, fontWeight: '600' },
   footnote: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18, marginLeft: 4, marginTop: 4 },
   segments: { flexDirection: 'row', backgroundColor: COLORS.controlFill, borderRadius: 12, padding: 3, marginVertical: 12 },
   segment: { flex: 1, minHeight: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

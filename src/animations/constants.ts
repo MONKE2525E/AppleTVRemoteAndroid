@@ -10,7 +10,6 @@ export const COLORS = {
   textSecondary: '#8E8E93',
   pillFill: 'rgba(255,255,255,0.13)',
   pillFillPressed: 'rgba(255,255,255,0.22)',
-  accent: '#0A84FF',
   touchSurfaceFill: 'rgba(255,255,255,0.08)',
   touchSurfaceBorder: 'rgba(255,255,255,0.10)',
   touchSurfaceHighlight: 'rgba(255,255,255,0.12)',
