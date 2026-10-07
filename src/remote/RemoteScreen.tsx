@@ -12,6 +12,7 @@ import { TopBar } from '../components/TopBar';
 import { ButtonPad } from '../components/ButtonPad';
 import { TouchSurface } from '../components/TouchSurface';
 import { TransportRow } from '../components/TransportRow';
+import { PlaybackPairing } from '../components/PlaybackPairing';
 import { AddAppleTvModal } from '../components/AddAppleTvModal';
 import { AppDrawer } from '../components/AppDrawer';
 import { DRAWER_HANDLE_HEIGHT, PadOverlay } from '../components/PadOverlay';
@@ -99,13 +100,13 @@ export function RemoteScreen() {
 
   const deviceLabel = connection.device.name;
   const touchSurfaceWidth = Math.max(0, contentRect.width - GEOMETRY.touchSurfaceSideMargin * scale * 2);
-  const hasNowPlaying = !connection.device.model?.startsWith("Roku ") && (
+  const isRoku = connection.device.identifier?.startsWith('roku:') === true;
+  const hasNowPlaying = (
     (playback != null && playback.playbackState !== 'unknown' && playback.playbackState !== 'stopped') ||
     capabilities?.skipForward === true ||
     capabilities?.skipBackward === true);
   const transportFooterHeight =
-    (GEOMETRY.gapSurfaceToTransport + GEOMETRY.transportBigSize + GEOMETRY.bottomMargin) * scale +
-    (connection.airplayPaired ? 0 : 48);
+    (GEOMETRY.gapSurfaceToTransport + GEOMETRY.transportBigSize + GEOMETRY.bottomMargin) * scale;
 
   const sheetHeight = Math.round(Math.min(window.height * 0.72, Math.max(320, window.height - 120)));
   const drawerHandleInset = DRAWER_HANDLE_HEIGHT * scale;
@@ -187,6 +188,10 @@ export function RemoteScreen() {
 
         <Animated.View style={listSlotStyle} pointerEvents="none" />
 
+        {!connection.airplayPaired && (
+          <PlaybackPairing key={connection.device.id} deviceId={connection.device.id} deviceName={deviceLabel} prominent />
+        )}
+
         <View
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
@@ -198,8 +203,9 @@ export function RemoteScreen() {
               scale={scale}
               showContextualIcons={hasNowPlaying}
               bottomInset={drawerHandleInset}
-              onSkipBack={() => commands.skipBy(-10)}
-              onSkipForward={() => commands.skipBy(10)}
+              transportKeys={isRoku}
+              onSkipBack={() => isRoku ? commands.pressButton('REWIND') : commands.skipBy(-10)}
+              onSkipForward={() => isRoku ? commands.pressButton('FAST_FORWARD') : commands.skipBy(10)}
             />
           ) : (
             <TouchSurface
@@ -208,8 +214,9 @@ export function RemoteScreen() {
               borderRadius={GEOMETRY.touchSurfaceRadius * scale}
               scale={scale}
               showContextualIcons={hasNowPlaying}
-              onSkipBack={() => commands.skipBy(-10)}
-              onSkipForward={() => commands.skipBy(10)}
+              transportKeys={isRoku}
+              onSkipBack={() => isRoku ? commands.pressButton('REWIND') : commands.skipBy(-10)}
+              onSkipForward={() => isRoku ? commands.pressButton('FAST_FORWARD') : commands.skipBy(10)}
             />
           ))}
           {padHeight > 0 && (

@@ -2,6 +2,7 @@ package com.privateremote.appletv.appletv
 
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
@@ -58,7 +59,7 @@ class Media3PlaybackAdapter(
             .setMediaId(np?.title ?: np?.appName ?: "appletv-now-playing")
             .setMediaMetadata(
                 MediaMetadata.Builder()
-                    .setTitle(np?.title)
+                    .setTitle(np?.title ?: np?.appName)
                     .setArtist(np?.artist)
                     .setAlbumTitle(np?.album)
                     .setArtworkData(np?.artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
@@ -80,6 +81,7 @@ class Media3PlaybackAdapter(
                 Player.COMMAND_PLAY_PAUSE,
                 Player.COMMAND_GET_METADATA,
                 Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+                Player.COMMAND_GET_TIMELINE,
             )
             .apply {
                 if (supportsSeek) addAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD, Player.COMMAND_SEEK_TO_MEDIA_ITEM)
@@ -87,6 +89,7 @@ class Media3PlaybackAdapter(
             .build()
 
         return State.Builder()
+            .setDeviceInfo(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).build())
             .setAvailableCommands(availableCommands)
             .setPlaylist(listOf(itemData))
             .setPlayWhenReady(derivedPlayWhenReady(np), Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
@@ -101,7 +104,11 @@ class Media3PlaybackAdapter(
     }
 
     override fun handleSeek(mediaItemIndex: Int, positionMs: Long, @Player.Command seekCommand: Int): ListenableFuture<*> {
-        forwarder.seekTo(positionMs / 1000.0)
+        when (seekCommand) {
+            Player.COMMAND_SEEK_BACK -> forwarder.skipBy(-10.0)
+            Player.COMMAND_SEEK_FORWARD -> forwarder.skipBy(10.0)
+            else -> forwarder.seekTo(positionMs / 1000.0)
+        }
         return Futures.immediateVoidFuture()
     }
 

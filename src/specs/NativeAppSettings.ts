@@ -9,6 +9,8 @@ export interface Spec extends TurboModule {
   canInstallPackages(): Promise<boolean>;
   openInstallSettings(): void;
   openAppSettings(): void;
+  canPostLiveUpdates(): Promise<boolean>;
+  openLiveUpdateSettings(): void;
   getPreference(key: string): Promise<string | null>;
   setPreference(key: string, value: string): void;
 }

@@ -116,7 +116,11 @@ class AppleTVController(
                             results[device.credentialKey] = device
                             listener?.onDevicesChanged(results.values.toList())
                         }
-                        launch { discovery.scan(DISCOVERY_TIMEOUT_MS, found) }
+                        launch {
+                            try { discovery.scan(DISCOVERY_TIMEOUT_MS, found) }
+                            catch (e: CancellationException) { throw e }
+                            catch (e: Exception) { Log.w(TAG, "Apple TV discovery failed", e) }
+                        }
                         launch {
                             try { rokuDiscovery.scan(3000, found) }
                             catch (e: CancellationException) { throw e }

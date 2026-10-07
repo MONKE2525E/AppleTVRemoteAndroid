@@ -11,6 +11,7 @@ import { AppUpdates } from './src/updates/AppUpdates';
 import { initAnalytics } from './src/analytics/analytics';
 import { SettingsScreen } from './src/settings/SettingsScreen';
 import { RemoteScreen } from './src/remote/RemoteScreen';
+import { PlaybackActivityPermission } from './src/appletv/PlaybackActivityPermission';
 
 void initAnalytics();
 
@@ -22,6 +23,7 @@ function App() {
         <RemoteScreen />
         <SettingsScreen />
         <AppUpdates />
+        <PlaybackActivityPermission />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

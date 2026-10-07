@@ -81,6 +81,18 @@ export function DiagnosticsScreen({ visible, onClose }: DiagnosticsScreenProps) 
             <Row label="Capabilities" value={capabilities ? Object.entries(capabilities).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none' : '—'} />
           </Section>
 
+          <Section title="Playback activity">
+            <Row label="System media notification" value={String(snapshot?.systemMediaNotification ?? false)} />
+            <Row label="Foreground playback" value={String(snapshot?.playbackForeground ?? false)} />
+            <Row label="Foreground deferred" value={String(snapshot?.playbackForegroundDeferred ?? false)} />
+            <Row label="Notifications enabled" value={String(snapshot?.notificationsEnabled ?? false)} />
+            <Row label="Live Updates supported" value={String(snapshot?.liveUpdatesSupported ?? false)} />
+            <Row label="Live Updates allowed" value={String(snapshot?.liveUpdatesAllowed ?? false)} />
+            <Row label="Activity promoted" value={String(snapshot?.liveUpdatePromoted ?? false)} />
+            <Row label="Activity error" value={snapshot?.liveUpdateError ?? 'none'} />
+            <Row label="Timing from TV" value={playback?.duration != null && playback.elapsedTime != null ? 'Available' : 'Unavailable'} />
+          </Section>
+
           <Section title="Touch">
             <Row label="Received (total)" value={String(snapshot?.touchEventsReceived ?? 0)} />
             <Row label="Sent (total)" value={String(snapshot?.touchEventsSent ?? 0)} />

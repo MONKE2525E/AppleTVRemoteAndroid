@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : ReactActivity() {
 
   private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -35,6 +36,7 @@ class MainActivity : ReactActivity() {
     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
       serviceBinder = service as AppleTVService.LocalBinder
       serviceBinder?.getController()?.autoReconnectIfPossible()
+      serviceBinder?.refreshPlaybackActivity()
       handleWidgetAction()
     }
     override fun onServiceDisconnected(name: ComponentName?) {
@@ -65,6 +67,16 @@ class MainActivity : ReactActivity() {
     super.onNewIntent(intent)
     setIntent(intent)
     handleWidgetAction()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    serviceBinder?.refreshPlaybackActivity()
+  }
+
+  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    serviceBinder?.refreshPlaybackActivity()
   }
 
   private fun handleWidgetAction() {

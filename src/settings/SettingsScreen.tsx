@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Modal, Pressable, ScrollView, Switch, StyleSheet, Text, View } from 'react-native';
+import { AppState, Modal, Platform, Pressable, ScrollView, Switch, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { isAnalyticsEnabled, setAnalyticsEnabled, sendTestError, track } from '../analytics/analytics';
 import { useAppleTV } from '../appletv/useAppleTV';
+import { DiagnosticsScreen } from '../diagnostics/DiagnosticsScreen';
 import { PlaybackPairing } from '../components/PlaybackPairing';
 import { COLORS } from '../animations/constants';
 import {
@@ -19,7 +20,10 @@ export function openSettings() { openPanel?.(); }
 
 const PERMISSIONS: { id: PermissionId; title: string; detail: string }[] = [
   { id: 'nearby', title: 'Nearby devices', detail: 'Find Apple TVs and Roku TVs on your Wi-Fi.' },
-  { id: 'notifications', title: 'Update notifications', detail: 'Alerts for new app versions. No connection notifications.' },
+  { id: 'notifications', title: 'Playback activities and updates', detail: 'Playback controls appear only while content is playing. Also allows app update alerts.' },
+  ...(Platform.OS === 'android' && Number(Platform.Version) >= 36 ? [
+    { id: 'liveUpdates' as const, title: 'Live Updates', detail: 'Allow the playback chip and lock-screen activity. Your phone controls availability and appearance.' },
+  ] : []),
   { id: 'install', title: 'Install updates', detail: 'Let this app install new versions you approve.' },
 ];
 
@@ -36,6 +40,7 @@ const INPUT_MODES: { mode: InputMode; label: string }[] = [
 
 export function SettingsScreen() {
   const [visible, setVisible] = useState(false);
+  const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
   const [statuses, setStatuses] = useState<Partial<Record<PermissionId, PermissionStatus>>>({});
   const [shareDiagnostics, setShareDiagnostics] = useState(isAnalyticsEnabled());
   const [testStatus, setTestStatus] = useState<string | null>(null);
@@ -117,6 +122,16 @@ export function SettingsScreen() {
             </View>
           )}
 
+          <View style={styles.card}>
+            <Pressable accessibilityRole="button" style={styles.row} onPress={() => setDiagnosticsVisible(true)}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Playback diagnostics</Text>
+                <Text style={styles.rowDetail}>Check TV timing, system media controls, and Live Update status.</Text>
+              </View>
+              <Text style={styles.link}>Open</Text>
+            </Pressable>
+          </View>
+
           <Text style={styles.sectionTitle}>Permissions</Text>
           <View style={styles.card}>
             {PERMISSIONS.map(({ id, title, detail }, index) => {
@@ -188,6 +203,7 @@ export function SettingsScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+      {diagnosticsVisible && <DiagnosticsScreen visible onClose={() => setDiagnosticsVisible(false)} />}
     </Modal>
   );
 }

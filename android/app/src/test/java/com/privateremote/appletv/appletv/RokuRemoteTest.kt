@@ -35,6 +35,14 @@ class RokuRemoteTest {
         assertNull(state.duration)
     }
 
+    @Test fun `runtime supplies missing duration for on demand playback`() {
+        val state = RokuRemote.parsePlayback("<player state=\"play\"><position>120000 ms</position><duration>0 ms</duration><runtime>1800000 ms</runtime><is_live>false</is_live></player>")
+        assertEquals(120.0, state.elapsedTime)
+        assertEquals(1800.0, state.duration)
+        val live = RokuRemote.parsePlayback("<player state=\"play\"><runtime>1800000 ms</runtime><is_live>true</is_live></player>")
+        assertNull(live.duration)
+    }
+
     @Test fun `Roku identity survives an address change and selects the Roku transport`() {
         val xml = "<device-info><serial-number>1234</serial-number><user-device-name>Bedroom</user-device-name><model-name>TV</model-name></device-info>"
         val first = RokuRemote.parseDevice(xml, "192.168.1.10")

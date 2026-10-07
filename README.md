@@ -19,7 +19,7 @@ React Native UI (src/)
 is a projection of `AppleTVController`'s MRP now-playing state onto a Media3
 `Player`, not a second state machine -- commands issued through the Media3
 session forward back into the controller. The service stays alive while clients
-are bound and rebuilds its session from persisted state
+are bound, or as a connected-device foreground service during playback, and rebuilds its session from persisted state
 (`CredentialStore` / `AppleTvSecureStore`, AndroidKeyStore-backed AES-GCM, no
 EncryptedSharedPreferences) on every `onCreate()`, including after process
 death.
@@ -89,14 +89,17 @@ layout mode, and the Media3 session projection. The diagnostics entry is disable
 - [ ] Reconnect after Wi-Fi loss/change
 - [ ] Pairing cancel and pairing failure (wrong PIN) recover cleanly
 - [ ] Background the app during playback, then foreground -- state is intact
-- [ ] Opening and connecting the remote posts no connection or playback notification
+- [ ] Opening and connecting the remote posts no activity until content is playing
+- [ ] Playing content shows a Live Update chip and expanded card on supported Android 16+ phones
+- [ ] Pausing, stopping, losing playback metadata, or disconnecting removes the activity
+- [ ] Pause and supported skip actions control the TV without opening the app
 - [ ] After process death, reopening the app reconnects cleanly
 
 ## Playback controls and Roku TVs
 
-- The remote uses a bound service and posts no ongoing connection or playback
-  notifications. Android may stop the connection in the background. Reopening
-  the app rebuilds the connection from saved pairing credentials.
+- The remote stays bound while idle. While content is playing, a connected-device
+  foreground service keeps playback monitoring and controls available in the background.
+  It returns to a bound service on pause, stop, missing metadata, or disconnect.
 - For Apple TV content details, open **Settings > Enable playback details**
   and enter the separate AirPlay code. Companion pairing alone only
   enables remote commands. The metadata connection retries after a dropped
@@ -110,7 +113,8 @@ layout mode, and the Media3 session projection. The diagnostics entry is disable
   connect through local ECP on port 8060 without an Apple pairing code. Enable
   **Settings > System > Advanced system settings > Control by mobile apps** on
   the Roku. ECP uses local HTTP, so the Android app permits cleartext traffic.
-  Roku navigation, play/pause, volume keys, mute and TV power are supported.
+  Roku navigation, play/pause, rewind, fast forward, volume keys, mute and TV power are supported.
+  Swipe-pad and notification controls use Roku Rev/Fwd keys, not a promised ten-second skip.
   Roku content metadata varies by channel; exact seeking and skip-by-seconds
   are not advertised. This does not add generic HomeKit or all AirPlay TV support.
 - Apple TV volume uses relative up/down keys. Held rocker repeats do not queue
@@ -176,3 +180,55 @@ and the workflow warns that source maps were skipped. Local release builds use
 the same environment variables, plus a globally installed `@posthog/cli`.
 
 See [PostHog's React Native source map setup](https://posthog.com/docs/error-tracking/upload-source-maps/react-native).
+
+## Android playback activity
+
+The service publishes one MediaStyle notification with the real Media3 platform
+session token. The earlier ProgressStyle notification is cancelled, including
+notifications retained across an APK update. Samsung's Media player Now Bar and
+Android's system media controls consume the same session. MediaStyle is not
+eligible for Android's separate promoted Live Update chip API.
+
+AppleTVService extends MediaSessionService and registers its session so Media3's
+notification controller exports the available custom commands to the platform
+session. It overrides notification publication to retain one card and the
+connected-device foreground-service type. Back/forward command buttons are
+registered with the session, not only the notification. Roku sends Rev/Fwd keys;
+Apple TV sends relative ten-second skips when supported. The session exposes the
+GET_TIMELINE command so reported duration reaches Android's media metadata.
+
+TV-provided artwork takes precedence. Roku fetches the active channel icon from
+query/icon/<plugin-id>, caches it per channel, and retries failures after a minute.
+If the player omits its plugin ID, query/active-app supplies the channel identity.
+For on-demand playback, runtime supplies duration when duration is missing or zero.
+Image responses are bounded to 512 KiB. If artwork is unavailable, the installed
+app icon replaces the generic music placeholder. A Roku channel icon is not the
+video thumbnail. Roku YouTube may omit video title, duration, position and video
+artwork from query/media-player; this feed cannot supply those missing details.
+No timer or video identity is invented.
+
+Only the explicit PLAYING state qualifies. The notification and session end on
+pause, stop or disconnect. Retained metadata cannot keep the Now Bar alive.
+Dismissal suppresses the activity until the next playback session or content
+change. Settings > Playback diagnostics shows TV timing and system notification
+state for hardware troubleshooting.
+
+Allow Playback activities and updates in the app's Settings. On Samsung enable
+lock-screen notifications and Media player under Lock screen and AOD > Now bar.
+Apple TV requires the separate AirPlay playback-details pairing before it can
+supply playback state. The pairing action is also visible on the remote screen.
+
+References:
+- [Android system media controls and custom buttons](https://developer.android.com/media/implement/surfaces/mobile)
+- [Connected-device foreground services](https://developer.android.com/develop/background-work/services/fgs/service-types#connected-device)
+- [Samsung Now Bar settings](https://www.samsung.com/za/support/mobile-devices/how-to-use-the-now-bar-on-the-lock-screen-of-your-samsung-galaxy-device/)
+- [Roku ECP metadata and channel icons](https://developer.roku.com/dev/docs/external-control-api)
+
+PlaybackLiveUpdateAndroidTest checks eligibility, dismissal and bitmap decoding.
+Its integration test runs the controller/service against a Roku HTTP fixture,
+verifies that only the media notification is posted, checks platform duration and
+artwork, sends the platform session's rewind/fast-forward custom actions and
+Pause, and checks removal on pause, stop and disconnect. Emulator verification
+covers the system media card. The user confirmed the preceding APK appears in
+Samsung's Now Bar; physical Apple TV and this revision's Samsung rendering still
+require hardware verification.

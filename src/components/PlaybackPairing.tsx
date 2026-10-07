@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View 
 import { appleTV } from '../appletv/client';
 import { COLORS } from '../animations/constants';
 
-export function PlaybackPairing({ deviceId, deviceName }: { deviceId: string; deviceName: string }) {
+export function PlaybackPairing({ deviceId, deviceName, prominent = false }: { deviceId: string; deviceName: string; prominent?: boolean }) {
   const [open, setOpen] = useState(false);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -42,8 +42,9 @@ export function PlaybackPairing({ deviceId, deviceName }: { deviceId: string; de
   };
   return (
     <>
-      <Pressable onPress={start} accessibilityRole="button" style={styles.link}>
-        <Text style={styles.text}>Enable playback details</Text>
+      <Pressable onPress={start} accessibilityRole="button" style={prominent ? styles.setup : styles.link}>
+        <Text style={prominent ? styles.setupTitle : styles.text}>Enable playback details</Text>
+        {prominent && <Text style={styles.setupDetail}>Pair once for movie details and lock-screen playback controls.</Text>}
       </Pressable>
       <Modal visible={open} transparent onRequestClose={close}>
         <View style={styles.overlay}>
@@ -67,6 +68,9 @@ export function PlaybackPairing({ deviceId, deviceName }: { deviceId: string; de
 }
 const styles = StyleSheet.create({
   link: { padding: 8, alignItems: 'center' },
+  setup: { padding: 14, marginTop: 12, marginHorizontal: 20, borderRadius: 16, backgroundColor: COLORS.controlFill, gap: 4 },
+  setupTitle: { color: COLORS.icon, fontSize: 15, fontWeight: '600' },
+  setupDetail: { color: COLORS.textSecondary, fontSize: 13 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
   dialog: { backgroundColor: COLORS.controlFill, padding: 24, borderRadius: 20, gap: 20 },
   title: { color: COLORS.icon, fontSize: 18, textAlign: 'center' },

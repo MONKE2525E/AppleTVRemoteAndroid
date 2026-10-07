@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
  * project plan: RN UI -> this facade -> AppleTVService -> AppleTVController
  * -> vendored protocol module).
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class AppleTVModule(reactContext: ReactApplicationContext) :
     NativeAppleTVSpec(reactContext), AppleTVListener {
 

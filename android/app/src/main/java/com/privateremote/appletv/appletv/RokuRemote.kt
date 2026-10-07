@@ -12,7 +12,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.w3c.dom.Element
+import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
+import android.os.SystemClock
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -47,6 +49,8 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
             "MENU", "BACK" -> "Back"
             "HOME", "TV" -> "Home"
             "PLAY_PAUSE" -> "Play"
+            "REWIND" -> "Rev"
+            "FAST_FORWARD" -> "Fwd"
             "VOLUME_UP" -> "VolumeUp"
             "VOLUME_DOWN" -> "VolumeDown"
             "MUTE" -> "VolumeMute"
@@ -57,7 +61,37 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
         request("keypress/$key", "POST")
     }
 
-    suspend fun playback(): NowPlaying = parsePlayback(request("query/media-player"))
+    private var iconId: String? = null
+    private var iconBytes: ByteArray? = null
+    private var nextIconAttempt = 0L
+
+    suspend fun playback(): NowPlaying {
+        val response = request("query/media-player")
+        var playback = parsePlayback(response)
+        val plugin = xml(response).getElementsByTagName("plugin").item(0) as? Element
+        var id = channelId(plugin?.getAttribute("id"))
+        // Some players report state without their plugin identity. The active app
+        // provides the channel icon, but is not a source of video metadata.
+        if (id == null && playback.isActive) {
+            try {
+                val app = xml(request("query/active-app")).getElementsByTagName("app").item(0) as? Element
+                id = channelId(app?.getAttribute("id"))
+                if (playback.appName == null) playback = playback.copy(appName = app?.textContent?.trim()?.takeIf { it.isNotEmpty() })
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("RokuRemote", "Active channel unavailable", e) }
+        }
+        if (id != iconId) { iconId = id; iconBytes = null; nextIconAttempt = 0 }
+        if (id != null && playback.isActive && iconBytes == null && SystemClock.elapsedRealtime() >= nextIconAttempt) {
+            nextIconAttempt = SystemClock.elapsedRealtime() + 60_000
+            try {
+                val bytes = requestBytes("query/icon/$id")
+                if (bytes.size >= 8 && (bytes.take(4) == listOf(0x89.toByte(), 0x50.toByte(), 0x4e.toByte(), 0x47.toByte()) ||
+                    bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte())) iconBytes = bytes
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("RokuRemote", "Channel artwork unavailable", e) }
+        }
+        return playback.copy(artwork = iconBytes)
+    }
 
     suspend fun apps(): List<AppInfo> = parseApps(request("query/apps"))
 
@@ -67,7 +101,9 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
 
     suspend fun verify(): AppleTvDevice = parseDevice(request("query/device-info"), device.address)
 
-    private suspend fun request(path: String, method: String = "GET"): String = withContext(Dispatchers.IO) {
+    private suspend fun request(path: String, method: String = "GET"): String = requestBytes(path, method).toString(Charsets.UTF_8)
+
+    private suspend fun requestBytes(path: String, method: String = "GET"): ByteArray = withContext(Dispatchers.IO) {
         val connection = URL("http://${device.address}:$ecpPort/$path").openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 3000
@@ -85,13 +121,24 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
                     "Enable Control by mobile apps in your Roku's advanced system settings."
                     else "Roku returned HTTP $status")
             }
-            connection.inputStream.bufferedReader().use { it.readText() }
+            connection.inputStream.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (output.size() + count > 512 * 1024) throw IOException("Roku response too large")
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
         } finally {
             connection.disconnect()
         }
     }
 
     companion object {
+        private fun channelId(value: String?): String? = value?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,80}")) }
         private fun xml(text: String): Element {
             // Android's DOM factory does not support Xerces' disallow-doctype-decl feature.
             // Reject DTDs before parsing so entity declarations remain forbidden on both runtimes.
@@ -126,7 +173,9 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
         }
 
         fun parsePlayback(text: String): NowPlaying {
-            val root = xml(text)
+            val document = xml(text)
+            val root = if (document.tagName == "player") document else
+                document.getElementsByTagName("player").item(0) as? Element ?: document
             val state = when (root.getAttribute("state").lowercase()) {
                 "play", "playing" -> PlaybackState.PLAYING
                 "pause", "paused" -> PlaybackState.PAUSED
@@ -137,10 +186,13 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
             fun seconds(tag: String): Double? = root.text(tag)?.removeSuffix("ms")?.trim()
                 ?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }?.div(1000)
             val plugin = root.getElementsByTagName("plugin").item(0) as? Element
+            val duration = seconds("duration")?.takeIf { it > 0 }
+                ?: if (root.text("is_live")?.equals("true", ignoreCase = true) == true) null
+                else seconds("runtime")?.takeIf { it > 0 }
             return NowPlaying(
                 title = root.text("title"), artist = root.text("artist"),
                 appName = plugin?.getAttribute("name")?.takeIf { it.isNotBlank() },
-                playbackState = state, duration = seconds("duration"), elapsedTime = seconds("position"),
+                playbackState = state, duration = duration, elapsedTime = seconds("position"),
             )
         }
     }
