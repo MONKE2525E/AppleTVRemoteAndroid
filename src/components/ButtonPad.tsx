@@ -58,7 +58,10 @@ export function ButtonPad({
         <PressableScale
           accessibilityLabel="Select"
           haptic="medium"
-          style={[styles.select, { width: select, height: select, borderRadius: select / 2 }]}
+          style={[
+            styles.select,
+            { width: select, height: select, borderRadius: select / 2, top: (diameter - select) / 2, left: (diameter - select) / 2 },
+          ]}
           onPress={() => void appleTV.pressButton('SELECT')}
         >
           <View />
@@ -88,6 +91,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   arrow: { position: 'absolute' },
-  select: { backgroundColor: COLORS.controlFill },
+  // Pinned like the arrows: flex-centering could lay it out against a stale,
+  // smaller ring while the pad resizes under the device list animation.
+  select: { position: 'absolute', backgroundColor: COLORS.controlFill },
   skipRow: { flexDirection: 'row', alignItems: 'center' },
 });
