@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   Activity,
@@ -7,6 +7,8 @@ import {
   Film,
   Gamepad2,
   Image as ImageIcon,
+  Mic,
+  Monitor,
   Music,
   RefreshCw,
   Search,
@@ -36,6 +38,7 @@ import {
   DRAWER_SPRING,
 } from '../animations/constants';
 import { isRokuDevice, lookupAppleArtwork, rokuIconUri } from '../appletv/appIcons';
+import { systemAppIcon } from '../appletv/systemAppIcons';
 import { appleTV } from '../appletv/client';
 import type { AppInfo, AppleTVDeviceInfo } from '../appletv/types';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -91,8 +94,12 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
     };
   }, [apps, roku]);
 
-  const iconFor = (app: AppInfo): string | null =>
-    roku ? rokuIconUri(device, app.bundleId) : artwork[app.bundleId] ?? null;
+  const iconFor = (app: AppInfo): ImageSourcePropType | string | null => {
+    if (roku) return rokuIconUri(device, app.bundleId);
+    const systemIcon = systemAppIcon(app.bundleId);
+    if (systemIcon) return systemIcon;
+    return artwork[app.bundleId] ?? null;
+  };
 
   const close = () => {
     progress.value = withSpring(0, DRAWER_SPRING);
@@ -217,7 +224,7 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
 
 interface AppTileProps {
   app: AppInfo;
-  icon: string | null;
+  icon: ImageSourcePropType | string | null;
   width: number;
   scale: number;
   onPress: () => void;
@@ -235,7 +242,7 @@ function AppTile({ app, icon, width, scale, onPress }: AppTileProps) {
       <View style={[styles.tile, { width, height, borderRadius: radius }]}>
         {icon && !failed ? (
           <Image
-            source={{ uri: icon }}
+            source={typeof icon === 'string' ? { uri: icon } : icon}
             resizeMode="cover"
             onError={() => setFailed(true)}
             style={{ width, height }}
@@ -262,6 +269,8 @@ const SYSTEM_GLYPHS: Record<string, ComponentType<LucideProps>> = {
   'com.apple.TVMovies': Film,
   'com.apple.TVShows': Clapperboard,
   'com.apple.Fitness': Activity,
+  'com.apple.podcasts': Mic,
+  'com.apple.TVHomeSharing': Monitor,
 };
 
 const GLYPH_FILLS = ['#2C2C2E', '#1E3A5F', '#3A2A4F', '#1F4436', '#4A2E22', '#203F4A', '#46243A'];
