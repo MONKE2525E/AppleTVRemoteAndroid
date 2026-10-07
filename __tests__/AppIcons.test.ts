@@ -82,3 +82,56 @@ test('phones without country information or an available native method use the U
   jest.mocked(NativeAppSettings.getCountryCodes).mockRejectedValueOnce(new Error('Unavailable'));
   expect(await storefronts()).toEqual(['us']);
 });
+
+test('a transient lookup failure leaves unresolved artwork retryable', async () => {
+  jest.mocked(NativeAppSettings.getCountryCodes).mockResolvedValueOnce(['us']);
+  jest.mocked(NativeAppSettings.getCountryCodes).mockResolvedValueOnce(['us']);
+  const fetchMock = jest.fn()
+    .mockResolvedValueOnce({ ok: false, status: 429 })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [{ bundleId: 'retry.example.app', artworkUrl512: 'retried.jpg' }] }),
+    });
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+  expect(await lookupAppleArtwork(['retry.example.app'])).toEqual({});
+  expect(fetchMock).toHaveBeenCalledTimes(2); // Continue with the iOS fallback after the 429.
+  expect(await lookupAppleArtwork(['retry.example.app'])).toEqual({ 'retry.example.app': 'retried.jpg' });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test('partial lookup failures preserve found art, continue storefront fallbacks, and retry unresolved ids', async () => {
+  jest.mocked(NativeAppSettings.getCountryCodes).mockResolvedValueOnce(['ca']);
+  jest.mocked(NativeAppSettings.getCountryCodes).mockResolvedValueOnce(['ca']);
+  const fetchMock = jest.fn(async (url: string) => {
+    if (url.includes('country=ca') && url.includes('entity=tvSoftware')) {
+      if (url.includes('partial.example.first')) {
+        return { ok: true, json: async () => ({ results: [{ bundleId: 'partial.example.first', artworkUrl512: 'first.jpg' }] }) };
+      }
+      if (url.includes('partial.example.missing')) {
+        return { ok: true, json: async () => ({ results: [{ bundleId: 'partial.example.missing', artworkUrl512: 'missing-retried.jpg' }] }) };
+      }
+    }
+    if (url.includes('country=ca') && !url.includes('entity=')) return { ok: false, status: 503 };
+    if (url.includes('country=us') && url.includes('entity=tvSoftware')) {
+      return { ok: true, json: async () => ({ results: [{ bundleId: 'partial.example.second', artworkUrl512: 'second.jpg' }] }) };
+    }
+    return { ok: true, json: async () => ({ results: [] }) };
+  });
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+  const ids = ['partial.example.first', 'partial.example.second', 'partial.example.missing'];
+  expect(await lookupAppleArtwork(ids)).toEqual({
+    'partial.example.first': 'first.jpg',
+    'partial.example.second': 'second.jpg',
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(4); // The Canadian 503 does not block the US fallback.
+
+  expect(await lookupAppleArtwork(ids)).toEqual({
+    'partial.example.first': 'first.jpg',
+    'partial.example.second': 'second.jpg',
+    'partial.example.missing': 'missing-retried.jpg',
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(5); // Only the unresolved id is retried.
+});

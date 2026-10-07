@@ -32,7 +32,7 @@ async function lookup(bundleIds: string[], country: string, entity?: string): Pr
   if (bundleIds.length === 0) return found;
   const params = `bundleId=${bundleIds.map(encodeURIComponent).join(',')}&country=${country}${entity ? `&entity=${entity}` : ''}`;
   const response = await fetch(`${LOOKUP}?${params}`);
-  if (!response.ok) return found;
+  if (!response.ok) throw new Error(`App Store lookup failed with HTTP ${response.status}`);
   const body = (await response.json()) as { results?: { bundleId?: string; artworkUrl512?: string }[] };
   for (const result of body.results ?? []) {
     if (result.bundleId && result.artworkUrl512) found.set(result.bundleId, result.artworkUrl512);
@@ -44,18 +44,20 @@ async function lookup(bundleIds: string[], country: string, entity?: string): Pr
 export async function lookupAppleArtwork(bundleIds: string[]): Promise<Record<string, string>> {
   const pending = bundleIds.filter(id => !id.startsWith('com.apple.') && !artworkCache.has(id));
   if (pending.length > 0) {
-    try {
-      const found = new Map<string, string>();
-      for (const country of await storefronts()) {
-        for (const entity of ['tvSoftware', undefined]) {
-          const missing = pending.filter(id => !found.has(id));
+    const found = new Map<string, string>();
+    let lookupFailed = false;
+    for (const country of await storefronts()) {
+      for (const entity of ['tvSoftware', undefined]) {
+        const missing = pending.filter(id => !found.has(id));
+        try {
           for (const [id, uri] of await lookup(missing, country, entity)) found.set(id, uri);
+        } catch {
+          lookupFailed = true;
         }
       }
-      for (const id of pending) artworkCache.set(id, found.get(id) ?? null);
-    } catch {
-      // Offline or blocked: leave uncached so the next drawer open retries.
     }
+    found.forEach((uri, id) => artworkCache.set(id, uri));
+    if (!lookupFailed) pending.forEach(id => artworkCache.set(id, found.get(id) ?? null));
   }
   const resolved: Record<string, string> = {};
   for (const id of bundleIds) {
