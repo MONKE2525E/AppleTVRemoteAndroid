@@ -163,12 +163,19 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.scrim, scrimStyle]}>
+      <Animated.View
+        pointerEvents={open ? 'auto' : 'none'}
+        importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+        accessibilityElementsHidden={!open}
+        style={[styles.scrim, scrimStyle]}
+      >
         <Pressable accessibilityLabel="Close apps" style={StyleSheet.absoluteFill} onPress={close} />
       </Animated.View>
 
       <Animated.View
         pointerEvents={open ? 'auto' : 'none'}
+        importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+        accessibilityElementsHidden={!open}
         style={[
           styles.sheet,
           {

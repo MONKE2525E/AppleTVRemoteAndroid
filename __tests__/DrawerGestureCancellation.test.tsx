@@ -93,6 +93,33 @@ test('a failed refresh hides cached apps and offers a retry that restores the gr
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('the closed drawer hides the sheet and scrim from accessibility until it opens', async () => {
+  appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  const drawer = (open: boolean) => safeArea(
+    <AppDrawer open={open} active={false} progress={{ value: open ? 1 : 0 } as SharedValue<number>}
+      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+  );
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(false)); });
+  const containers = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.importantForAccessibility != null);
+  expect(containers()).toHaveLength(2);
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(node.props.accessibilityElementsHidden).toBe(true);
+  }
+  await ReactTestRenderer.act(() => renderer.update(drawer(true)));
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('auto');
+    expect(node.props.accessibilityElementsHidden).toBe(false);
+  }
+  await ReactTestRenderer.act(() => renderer.update(drawer(false)));
+  for (const node of containers()) {
+    expect(node.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(node.props.accessibilityElementsHidden).toBe(true);
+  }
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('a cancelled handle pull settles closed once, while a successful release keeps its chosen state', async () => {
   const panSpy = jest.spyOn(Gesture, 'Pan');
   const progress = { value: 0 } as SharedValue<number>;
