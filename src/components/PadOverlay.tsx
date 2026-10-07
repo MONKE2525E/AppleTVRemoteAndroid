@@ -1,7 +1,7 @@
 import { ChevronUp, Settings } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { interpolate, useAnimatedStyle, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { runOnJS } from 'react-native-worklets';
 import {
   COLORS,
@@ -40,6 +40,7 @@ export function PadOverlay({
 }: PadOverlayProps) {
   const handleHeight = DRAWER_HANDLE_HEIGHT * scale;
   const gearSlot = 44 * scale;
+  const pullActive = useSharedValue(false);
 
   const settle = (open: boolean, velocityY: number) => {
     'worklet';
@@ -56,6 +57,7 @@ export function PadOverlay({
     .failOffsetY(12)
     .onStart(() => {
       'worklet';
+      pullActive.value = true;
       runOnJS(onDrawerDragStart)();
     })
     .onUpdate(event => {
@@ -63,12 +65,19 @@ export function PadOverlay({
       if (sheetHeight <= 0) return;
       drawerProgress.value = Math.min(1, Math.max(0, -event.translationY / sheetHeight));
     })
-    .onEnd(event => {
+    .onEnd((event, success) => {
       'worklet';
+      if (!success) return;
       const open =
         event.velocityY < -DRAWER_FLICK_VELOCITY ||
         (event.velocityY < DRAWER_FLICK_VELOCITY && drawerProgress.value > DRAWER_COMMIT_FRACTION);
       settle(open, event.velocityY);
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (!pullActive.value) return;
+      pullActive.value = false;
+      if (!success) settle(false, 0);
     });
 
   const tap = Gesture.Tap().onEnd((_event, success) => {

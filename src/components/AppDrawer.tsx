@@ -66,6 +66,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 export function AppDrawer({ open, active, progress, sheetHeight, width, left, scale, device, onSettle }: AppDrawerProps) {
   const { apps } = useAppleTV();
   const insets = useSafeAreaInsets();
+  const dragActive = useSharedValue(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [attempt, setAttempt] = useState(0);
   const [artwork, setArtwork] = useState<Record<string, string>>({});
@@ -115,13 +116,18 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
   // settles with the gesture's velocity, matching the pull-up handle.
   const drag = Gesture.Pan()
     .activeOffsetY(6)
+    .onStart(() => {
+      'worklet';
+      dragActive.value = true;
+    })
     .onUpdate(event => {
       'worklet';
       if (sheetHeight <= 0) return;
       progress.value = Math.min(1, Math.max(0, 1 - event.translationY / sheetHeight));
     })
-    .onEnd(event => {
+    .onEnd((event, success) => {
       'worklet';
+      if (!success) return;
       const dismiss =
         event.velocityY > DRAWER_FLICK_VELOCITY ||
         (event.velocityY > -DRAWER_FLICK_VELOCITY && progress.value < 1 - DRAWER_COMMIT_FRACTION);
@@ -130,6 +136,15 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
         velocity: sheetHeight > 0 ? -event.velocityY / sheetHeight : 0,
       });
       runOnJS(onSettle)(!dismiss);
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (!dragActive.value) return;
+      dragActive.value = false;
+      if (!success) {
+        progress.value = withSpring(1, DRAWER_SPRING);
+        runOnJS(onSettle)(true);
+      }
     });
 
   const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value * 0.6 }));
