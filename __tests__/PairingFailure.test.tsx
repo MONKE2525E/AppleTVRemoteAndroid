@@ -1,4 +1,5 @@
 import ReactTestRenderer from 'react-test-renderer';
+import { useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NativeAppleTV from '../src/specs/NativeAppleTV';
 import { PairingScreen } from '../src/pairing/PairingScreen';
@@ -21,6 +22,13 @@ const failed: ConnectionState = {
   stalePairing: false,
   canWake: true,
 };
+const failedAfterPairing: ConnectionState = {
+  state: 'failed',
+  device: otherTv,
+  reason: 'Could not reach the TV while a VPN is active.',
+  stalePairing: false,
+  canWake: true,
+};
 
 const texts = (renderer: ReactTestRenderer.ReactTestRenderer) =>
   renderer.root.findAll(node => typeof node.props.children === 'string').map(node => node.props.children as string);
@@ -30,6 +38,14 @@ const press = (renderer: ReactTestRenderer.ReactTestRenderer, label: string) =>
 function StoreBackedPairingScreen() {
   const { devices, connection } = useAppleTV();
   return <PairingScreen devices={devices} connection={connection} />;
+}
+
+function AddTvWithRetryScreen() {
+  const [visible, setVisible] = useState(true);
+  return <>
+    <StoreBackedPairingScreen />
+    <AddAppleTvModal visible={visible} onClose={() => setVisible(false)} />
+  </>;
 }
 
 beforeEach(() => {
@@ -204,5 +220,30 @@ test('Add TV PIN failure clears the code and retry starts a fresh pairing', asyn
   expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(2);
   expect(pinInput().props.value).toBe('');
   expect(onClose).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('Add TV closes after PIN acceptance and shows the connection retry state', async () => {
+  jest.mocked(NativeAppleTV.submitPin).mockImplementationOnce(async () => {
+    appleTVStore.setConnection(failedAfterPairing);
+    return true;
+  });
+  appleTVStore.setDiscovered([otherTv]);
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><AddTvWithRetryScreen /></GestureHandlerRootView>,
+    );
+  });
+
+  await ReactTestRenderer.act(async () => { await press(renderer, otherTv.name); });
+  await ReactTestRenderer.act(() => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' }).props.onChangeText('1234'));
+  await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
+
+  expect(appleTVStore.getSnapshot().connection).toEqual(failedAfterPairing);
+  expect(texts(renderer)).toContain('Retry');
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
+  expect(NativeAppleTV.submitPin).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
 });

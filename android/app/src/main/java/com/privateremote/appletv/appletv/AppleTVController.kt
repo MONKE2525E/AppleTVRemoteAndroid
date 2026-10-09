@@ -177,7 +177,16 @@ class AppleTVController(
         }
         store.saveCompanion(device.credentialKey, credentials)
         closePairing()
-        connect(deviceId)
+        try {
+            connect(deviceId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // connect() publishes the failure state for the existing Retry UI.
+            // The PIN was accepted and its credentials were saved, so do not
+            // send the pairing dialog back through Pair Setup.
+            Log.w(TAG, "Pairing succeeded but the TV connection failed", e)
+        }
         return true
     }
 
