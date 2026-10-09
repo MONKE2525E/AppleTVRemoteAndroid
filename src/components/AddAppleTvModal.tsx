@@ -25,7 +25,7 @@ interface AddAppleTvModalProps {
 type Stage =
   | { kind: 'searching' }
   | { kind: 'list' }
-  | { kind: 'pin'; device: AppleTVDeviceInfo; submitting: boolean; error: string | null };
+  | { kind: 'pin'; device: AppleTVDeviceInfo; submitting: boolean; error: string | null; pairingReady: boolean };
 
 export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
   const { devices, discovered, commands } = useAppleTV();
@@ -65,6 +65,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
   }, [visible, found.length]);
 
   const close = () => {
+    if (stage.kind === 'pin' && stage.submitting) return;
     if (stage.kind === 'pin') commands.cancelPairing(stage.device.id);
     commands.stopDiscovery();
     onClose();
@@ -83,7 +84,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
       }
       await commands.startPairing(device.id);
       setPin('');
-      setStage({ kind: 'pin', device, submitting: false, error: null });
+      setStage({ kind: 'pin', device, submitting: false, error: null, pairingReady: true });
     } catch (e) {
       setListError((e as Error).message || 'Could not start pairing. Is the TV awake?');
     }
@@ -92,7 +93,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
   const submitPin = async () => {
     if (stage.kind !== 'pin') return;
     const { device } = stage;
-    setStage({ kind: 'pin', device, submitting: true, error: null });
+    setStage({ ...stage, submitting: true, error: null });
     try {
       await commands.submitPin(device.id, pin);
       // Native connection events retain the actual playback-pairing status.
@@ -100,12 +101,23 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
       commands.stopDiscovery();
       onClose();
     } catch (e) {
-      setStage({
-        kind: 'pin',
-        device,
-        submitting: false,
-        error: (e as Error).message || 'Incorrect code. Try again.',
-      });
+      setPin('');
+      setStage({ kind: 'pin', device, submitting: false, pairingReady: false,
+        error: (e as Error).message || 'Pairing failed. Try again.' });
+    }
+  };
+
+  const retryPairing = async () => {
+    if (stage.kind !== 'pin') return;
+    const { device } = stage;
+    setPin('');
+    setStage({ kind: 'pin', device, submitting: true, pairingReady: false, error: null });
+    try {
+      await commands.startPairing(device.id);
+      setStage({ kind: 'pin', device, submitting: false, pairingReady: true, error: null });
+    } catch (e) {
+      setStage({ kind: 'pin', device, submitting: false, pairingReady: false,
+        error: (e as Error).message || 'Could not start pairing. Try again.' });
     }
   };
 
@@ -115,6 +127,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
         <View style={styles.header}>
           <Pressable
             onPress={close}
+            disabled={stage.kind === 'pin' && stage.submitting}
             accessibilityLabel="Close"
             hitSlop={12}
             style={styles.closeHit}
@@ -159,32 +172,44 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
 
         {stage.kind === 'pin' && (
           <View style={styles.center}>
-            <Text style={styles.title}>Enter the code on {stage.device.name}</Text>
-            <Text style={styles.hint}>A 4-digit code is shown on the TV.</Text>
-            <TextInput
-              value={pin}
-              onChangeText={setPin}
-              keyboardType="number-pad"
-              maxLength={4}
-              autoFocus
-              style={styles.pinInput}
-              placeholder="0000"
-              placeholderTextColor={COLORS.textSecondary}
-            />
+            <Text style={styles.title}>
+              {stage.pairingReady ? `Enter the code on ${stage.device.name}` : `Pair again with ${stage.device.name}`}
+            </Text>
+            {stage.pairingReady ? (
+              <>
+                <Text style={styles.hint}>A 4-digit code is shown on the TV.</Text>
+                <TextInput
+                  accessibilityLabel="Companion pairing code"
+                  value={pin}
+                  onChangeText={setPin}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  autoFocus
+                  style={styles.pinInput}
+                  placeholder="0000"
+                  placeholderTextColor={COLORS.textSecondary}
+                />
+              </>
+            ) : null}
             {stage.error ? <Text style={styles.error}>{stage.error}</Text> : null}
             <PressableScale
-              style={[styles.primary, pin.length < 4 || stage.submitting ? styles.primaryDisabled : null]}
-              disabled={pin.length < 4 || stage.submitting}
-              onPress={submitPin}
+              accessibilityLabel={stage.pairingReady ? 'Submit pairing PIN' : 'Retry pairing'}
+              style={[
+                styles.primary,
+                stage.submitting || (stage.pairingReady && pin.length < 4) ? styles.primaryDisabled : null,
+              ]}
+              disabled={stage.submitting || (stage.pairingReady && pin.length < 4)}
+              onPress={stage.pairingReady ? submitPin : retryPairing}
             >
               {stage.submitting ? (
                 <ActivityIndicator color={COLORS.background} />
               ) : (
-                <Text style={styles.primaryLabel}>Pair</Text>
+                <Text style={styles.primaryLabel}>{stage.pairingReady ? 'Pair' : 'Try again'}</Text>
               )}
             </PressableScale>
             <Pressable
               style={styles.secondary}
+              disabled={stage.submitting}
               onPress={() => {
                 commands.cancelPairing(stage.device.id);
                 setPin('');

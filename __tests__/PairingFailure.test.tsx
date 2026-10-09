@@ -2,6 +2,7 @@ import ReactTestRenderer from 'react-test-renderer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NativeAppleTV from '../src/specs/NativeAppleTV';
 import { PairingScreen } from '../src/pairing/PairingScreen';
+import { AddAppleTvModal } from '../src/components/AddAppleTvModal';
 import { appleTVStore } from '../src/appletv/store';
 import { useAppleTV } from '../src/appletv/useAppleTV';
 import type { AppleTVDeviceInfo, ConnectionState } from '../src/appletv/types';
@@ -35,6 +36,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(NativeAppleTV.disconnect).mockReset().mockResolvedValue(undefined);
   appleTVStore.setDevices([]);
+  appleTVStore.setDiscovered([]);
   appleTVStore.setApps([]);
   appleTVStore.setConnection({ state: 'disconnected' });
 });
@@ -171,5 +173,36 @@ test('failed Companion PIN submission clears the code and retry starts a fresh p
   await ReactTestRenderer.act(async () => { finishRetry(); await retryRequest; });
   expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(3);
   expect(pinInput().props.value).toBe('');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('Add TV PIN failure clears the code and retry starts a fresh pairing', async () => {
+  jest.mocked(NativeAppleTV.submitPin).mockRejectedValueOnce(
+    new Error('Could not reach the TV while a VPN is active.'),
+  );
+  appleTVStore.setDiscovered([otherTv]);
+  const onClose = jest.fn();
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><AddAppleTvModal visible onClose={onClose} /></GestureHandlerRootView>,
+    );
+  });
+
+  await ReactTestRenderer.act(async () => { await press(renderer, otherTv.name); });
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
+  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' });
+  await ReactTestRenderer.act(() => pinInput().props.onChangeText('1234'));
+  await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
+
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Companion pairing code' })).toHaveLength(0);
+  expect(texts(renderer)).toContain('Could not reach the TV while a VPN is active.');
+  expect(texts(renderer)).toContain('Try again');
+
+  await ReactTestRenderer.act(async () => { await press(renderer, 'Retry pairing'); });
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(2);
+  expect(pinInput().props.value).toBe('');
+  expect(onClose).not.toHaveBeenCalled();
   await ReactTestRenderer.act(() => renderer.unmount());
 });
