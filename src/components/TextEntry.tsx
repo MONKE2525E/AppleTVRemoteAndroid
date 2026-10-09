@@ -15,7 +15,7 @@ function useTextSync() {
   const pending = useRef<string | null>(null);
   const running = useRef(false);
 
-  return useCallback((text: string) => {
+  const send = useCallback((text: string) => {
     pending.current = text;
     if (running.current) return;
     running.current = true;
@@ -28,6 +28,10 @@ function useTextSync() {
       running.current = false;
     })();
   }, []);
+  // Drops a queued value so it can't land in a different field after the one
+  // it was typed for loses focus. A request already in flight still completes.
+  const cancel = useCallback(() => { pending.current = null; }, []);
+  return { send, cancel };
 }
 
 /**
@@ -39,7 +43,7 @@ export function TextEntryPrompt() {
   const { textInput } = useAppleTV();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
-  const sync = useTextSync();
+  const { send: sync, cancel: cancelSync } = useTextSync();
   // The TV re-reports the pre-send text after each of our own edits, so the
   // snapshot it reports trails what we typed. Remember the latest text plus
   // every value we know to be stale (the original text and each earlier edit),
@@ -53,8 +57,10 @@ export function TextEntryPrompt() {
     if (!textInput.focused) {
       setOpen(false);
       typed.current = null;
+      cancelSync();
     }
-  }, [textInput.focused]);
+  }, [textInput.focused, cancelSync]);
+  useEffect(() => cancelSync, [cancelSync]);
 
   // autoFocus is unreliable inside an Android Modal: the input can mount
   // before the window can take focus, leaving the keyboard down. Focus

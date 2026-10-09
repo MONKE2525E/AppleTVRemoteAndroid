@@ -65,3 +65,21 @@ test('reopening keeps the latest text after several completed sends', async () =
   expect(tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' }).props.value).toBe('abcd');
   await act(async () => { tree!.unmount(); });
 });
+
+test('a queued edit is dropped when the TV field loses focus', async () => {
+  let release: () => void = () => {};
+  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>(r => { release = r; }));
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt />); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'a', focused: true }); });
+  const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  await act(async () => { pill.props.onPress(); });
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { input().props.onChangeText('ab'); });
+  await act(async () => { input().props.onChangeText('abc'); });
+  await act(async () => { appleTVStore.setTextInput({ current: null, focused: false }); });
+  await act(async () => { release(); });
+  expect(NativeAppleTV.sendText).toHaveBeenCalledTimes(1);
+  expect(NativeAppleTV.sendText).toHaveBeenCalledWith('ab', true);
+  await act(async () => { tree!.unmount(); });
+});
