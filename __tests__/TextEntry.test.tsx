@@ -83,3 +83,23 @@ test('a queued edit is dropped when the TV field loses focus', async () => {
   expect(NativeAppleTV.sendText).toHaveBeenCalledWith('ab', true);
   await act(async () => { tree!.unmount(); });
 });
+
+test('adopting a new TV snapshot restarts the stale history', async () => {
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt />); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'ab', focused: true }); });
+  const openPill = () => tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { openPill().props.onPress(); });
+  await act(async () => { input().props.onChangeText('abc'); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'xyz', focused: true }); });
+  await act(async () => { openPill().props.onPress(); });
+  expect(input().props.value).toBe('xyz');
+  await act(async () => { input().props.onChangeText('xyz1'); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'xyz', focused: true }); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  await act(async () => { openPill().props.onPress(); });
+  expect(input().props.value).toBe('xyz1');
+  await act(async () => { tree!.unmount(); });
+});

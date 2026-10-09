@@ -75,7 +75,14 @@ export function TextEntryPrompt() {
 
   const show = () => {
     const last = typed.current;
-    setValue(last && last.stale.has(textInput.current ?? '') ? last.text : textInput.current ?? '');
+    if (last && last.stale.has(textInput.current ?? '')) {
+      setValue(last.text);
+    } else {
+      // The TV reports text we didn't produce (for example it moved to another
+      // populated field), so adopt it and restart the stale history from it.
+      typed.current = null;
+      setValue(textInput.current ?? '');
+    }
     setOpen(true);
   };
   const onChangeText = (text: string) => {
