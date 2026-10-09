@@ -62,6 +62,22 @@ export function TextEntryPrompt() {
   }, [textInput.focused, cancelSync]);
   useEffect(() => cancelSync, [cancelSync]);
 
+  // The TV can move straight to another populated field without reporting a
+  // loss of focus. Text we didn't produce (not the latest edit or a known-stale
+  // snapshot) means a different field: drop queued edits, restart the history,
+  // and refresh the editor if it is open.
+  const tvText = textInput.current ?? '';
+  const tvFocused = textInput.focused;
+  useEffect(() => {
+    const last = typed.current;
+    if (!tvFocused || !last) return;
+    const reported = tvText;
+    if (reported === last.text || last.stale.has(reported)) return;
+    typed.current = null;
+    cancelSync();
+    setValue(reported);
+  }, [tvText, tvFocused, cancelSync]);
+
   // autoFocus is unreliable inside an Android Modal: the input can mount
   // before the window can take focus, leaving the keyboard down. Focus
   // explicitly once the dialog is up, with a retry for slow transitions.

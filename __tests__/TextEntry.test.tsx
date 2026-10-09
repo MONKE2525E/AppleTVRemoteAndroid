@@ -103,3 +103,21 @@ test('adopting a new TV snapshot restarts the stale history', async () => {
   expect(input().props.value).toBe('xyz1');
   await act(async () => { tree!.unmount(); });
 });
+
+test('switching fields while the dialog is open adopts the new text and drops queued edits', async () => {
+  let release: () => void = () => {};
+  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>(r => { release = r; }));
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt />); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'ab', focused: true }); });
+  const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { pill.props.onPress(); });
+  await act(async () => { input().props.onChangeText('abc'); });
+  await act(async () => { input().props.onChangeText('abcd'); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'xyz', focused: true }); });
+  expect(input().props.value).toBe('xyz');
+  await act(async () => { release(); });
+  expect(NativeAppleTV.sendText).toHaveBeenCalledTimes(1);
+  await act(async () => { tree!.unmount(); });
+});
