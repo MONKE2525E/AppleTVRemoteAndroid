@@ -60,3 +60,5 @@ the request's own deadline into a protocol timeout, preserving cancellation from
 an enclosing caller deadline. A framed transport contract permits deterministic
 fake transport tests without opening sockets. Retain this patch when re-vendoring
 until upstream covers these cases.
+An activity check before sending also prevents an already cancelled caller from
+writing a new command.

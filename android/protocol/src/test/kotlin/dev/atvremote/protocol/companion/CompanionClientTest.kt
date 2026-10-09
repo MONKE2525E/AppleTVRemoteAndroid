@@ -3,6 +3,8 @@ package dev.atvremote.protocol.companion
 import dev.atvremote.protocol.opack.Opack
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -36,6 +38,21 @@ class CompanionClientTest {
         assertFailsWith<TimeoutCancellationException> {
             withTimeout(100) { client.request("fake", timeoutMs = 1000) }
         }
+        assertEquals(0, pendingCount(client))
+    }
+
+    @Test fun `an already cancelled caller never sends a command`() = runTest {
+        val transport = FakeTransport()
+        var sends = 0
+        transport.send = { _, _ -> sends++ }
+        val client = CompanionClient("synthetic", 0, transport)
+        client.connect()
+        val caller = launch {
+            currentCoroutineContext().cancel()
+            client.request("fake")
+        }
+        caller.join()
+        assertEquals(0, sends)
         assertEquals(0, pendingCount(client))
     }
 

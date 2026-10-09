@@ -10,6 +10,8 @@ import dev.atvremote.protocol.hap.TlvValue
 import dev.atvremote.protocol.opack.Opack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -132,6 +134,7 @@ class CompanionClient internal constructor(
         val deferred = CompletableDeferred<Map<Any?, Any?>>()
         pending[key] = deferred
         try {
+            currentCoroutineContext().ensureActive()
             connection.send(type, Opack.pack(payload))
             return withTimeoutOrNull(timeoutMs) { deferred.await() }
                 ?: throw ProtocolException("timed out waiting for response to $type")
