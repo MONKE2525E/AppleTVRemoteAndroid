@@ -132,3 +132,44 @@ test('forgetting a failed noncurrent TV returns to browsing without offering to 
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
+
+test('failed Companion PIN submission clears the code and retry starts a fresh pairing', async () => {
+  jest.mocked(NativeAppleTV.submitPin).mockRejectedValueOnce(
+    new Error('Could not reach the TV while a VPN is active.'),
+  );
+
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(
+      <GestureHandlerRootView><PairingScreen devices={[otherTv]} connection={{ state: 'disconnected' }} /></GestureHandlerRootView>,
+    );
+  });
+
+  await ReactTestRenderer.act(async () => { await press(renderer, `Pair with ${otherTv.name}`); });
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
+  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' });
+  await ReactTestRenderer.act(() => pinInput().props.onChangeText('1234'));
+  await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
+
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Companion pairing code' })).toHaveLength(0);
+  expect(texts(renderer)).toContain('Could not reach the TV while a VPN is active.');
+  expect(texts(renderer)).toContain('Try again');
+
+  jest.mocked(NativeAppleTV.startPairing).mockRejectedValueOnce(new Error('TV still unreachable'));
+  await ReactTestRenderer.act(async () => { await press(renderer, 'Retry pairing'); });
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(2);
+  expect(texts(renderer)).toContain('TV still unreachable');
+  expect(texts(renderer)).toContain('Try again');
+
+  let finishRetry!: () => void;
+  const retryPending = new Promise<void>(resolve => { finishRetry = resolve; });
+  jest.mocked(NativeAppleTV.startPairing).mockImplementationOnce(() => retryPending);
+  let retryRequest!: Promise<void>;
+  await ReactTestRenderer.act(() => { retryRequest = press(renderer, 'Retry pairing') as Promise<void>; });
+  expect(renderer.root.findByProps({ accessibilityLabel: 'Retry pairing' }).props.disabled).toBe(true);
+  expect(renderer.root.findByProps({ accessibilityLabel: 'Cancel pairing' }).props.disabled).toBe(true);
+  await ReactTestRenderer.act(async () => { finishRetry(); await retryRequest; });
+  expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(3);
+  expect(pinInput().props.value).toBe('');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});

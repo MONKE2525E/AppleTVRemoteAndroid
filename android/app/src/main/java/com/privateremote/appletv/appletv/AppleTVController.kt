@@ -169,7 +169,12 @@ class AppleTVController(
     suspend fun submitPin(deviceId: String, pin: String): Boolean {
         val session = pairingSession ?: throw IllegalStateException("No pairing in progress")
         val device = pairingDevice ?: throw IllegalStateException("No pairing in progress")
-        val credentials = session.complete(pin)
+        val credentials = try {
+            session.complete(pin)
+        } catch (e: Exception) {
+            closePairing()
+            throw connectionFailure(e)
+        }
         store.saveCompanion(device.credentialKey, credentials)
         closePairing()
         connect(deviceId)
