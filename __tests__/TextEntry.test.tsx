@@ -37,3 +37,16 @@ test('typing replaces the TV field and losing focus removes the prompt', async (
   expect(tree!.root.findAllByProps({ accessibilityLabel: 'Text to send to TV' })).toHaveLength(0);
   await act(async () => { tree!.unmount(); });
 });
+
+test('reopening keeps the text typed while the TV still reports the stale snapshot', async () => {
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt />); });
+  await act(async () => { appleTVStore.setTextInput({ current: 'ab', focused: true }); });
+  const openPill = () => tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  await act(async () => { openPill().props.onPress(); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' }).props.onChangeText('abc'); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  await act(async () => { openPill().props.onPress(); });
+  expect(tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' }).props.value).toBe('abc');
+  await act(async () => { tree!.unmount(); });
+});

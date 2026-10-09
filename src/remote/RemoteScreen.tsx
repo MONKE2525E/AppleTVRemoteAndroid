@@ -197,7 +197,7 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
-          <TextEntryPrompt />
+          {!isRoku && <TextEntryPrompt />}
           {padHeight > 0 && (inputMode === 'buttons' ? (
             <ButtonPad
               width={touchSurfaceWidth}

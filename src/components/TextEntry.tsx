@@ -40,12 +40,19 @@ export function TextEntryPrompt() {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const sync = useTextSync();
+  // The TV re-reports the pre-send text after our own edits, so remember what
+  // we typed and the snapshot it was typed over. Reuse it only while the TV
+  // still reports that same snapshot (no newer information from the TV).
+  const typed = useRef<{ text: string; base: string | null } | null>(null);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   // The field lost focus on the TV (submitted, cancelled, navigated away), so
   // there is nothing left to type into.
   useEffect(() => {
-    if (!textInput.focused) setOpen(false);
+    if (!textInput.focused) {
+      setOpen(false);
+      typed.current = null;
+    }
   }, [textInput.focused]);
 
   // autoFocus is unreliable inside an Android Modal: the input can mount
@@ -60,11 +67,13 @@ export function TextEntryPrompt() {
   if (!textInput.focused) return null;
 
   const show = () => {
-    setValue(textInput.current ?? '');
+    const last = typed.current;
+    setValue(last && last.base === textInput.current ? last.text : textInput.current ?? '');
     setOpen(true);
   };
   const onChangeText = (text: string) => {
     setValue(text);
+    typed.current = { text, base: typed.current?.base ?? textInput.current };
     sync(text);
   };
 
