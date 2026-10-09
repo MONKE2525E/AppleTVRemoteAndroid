@@ -2,8 +2,11 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react-
 import { StyleSheet, View } from 'react-native';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
+import { CircleIconButton } from './CircleIconButton';
 import { SkipIcon } from './icons/Icons';
 import { PressableScale } from './PressableScale';
+
+export const MIN_TOUCH_TARGET = 48;
 
 interface ButtonPadProps {
   width: number;
@@ -39,7 +42,9 @@ export function ButtonPad({
   onSkipForward,
 }: ButtonPadProps) {
   const skipSize = 44 * scale;
-  const skipRow = showContextualIcons ? skipSize + 16 * scale : 0;
+  // Same frosted disc as the transport buttons, and never under the 48dp touch minimum.
+  const skipTarget = Math.max(MIN_TOUCH_TARGET, 56 * scale);
+  const skipRow = showContextualIcons ? skipTarget + 16 * scale : 0;
   const diameter = Math.max(0, Math.min(width, height - skipRow - bottomInset));
   const zone = diameter * 0.3;
   const select = diameter * 0.36;
@@ -70,13 +75,21 @@ export function ButtonPad({
         </PressableScale>
       </View>
       {showContextualIcons && (
-        <View style={[styles.skipRow, { marginTop: 16 * scale, gap: 48 * scale }]}>
-          <PressableScale accessibilityLabel={transportKeys ? 'Rewind' : 'Skip back 10 seconds'} onPress={onSkipBack}>
+        <View style={[styles.skipRow, { marginTop: 16 * scale, gap: 24 * scale }]}>
+          <CircleIconButton
+            size={skipTarget}
+            accessibilityLabel={transportKeys ? 'Rewind' : 'Skip back 10 seconds'}
+            onPress={onSkipBack}
+          >
             <SkipIcon size={skipSize * 0.75} direction="back" transport={transportKeys} />
-          </PressableScale>
-          <PressableScale accessibilityLabel={transportKeys ? 'Fast forward' : 'Skip forward 10 seconds'} onPress={onSkipForward}>
+          </CircleIconButton>
+          <CircleIconButton
+            size={skipTarget}
+            accessibilityLabel={transportKeys ? 'Fast forward' : 'Skip forward 10 seconds'}
+            onPress={onSkipForward}
+          >
             <SkipIcon size={skipSize * 0.75} direction="forward" transport={transportKeys} />
-          </PressableScale>
+          </CircleIconButton>
         </View>
       )}
     </View>

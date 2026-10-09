@@ -125,15 +125,21 @@ export function TouchSurface({
 
   return (
     <GestureDetector gesture={composed}>
-      <View style={[styles.surface, { width, height, borderRadius }]}>
+      <View
+        accessible
+        accessibilityLabel="Touch surface"
+        accessibilityHint="Tap to select. Swipe to move."
+        style={[styles.surface, { width, height, borderRadius }]}
+      >
         <Animated.View pointerEvents="none" style={[styles.highlight, { borderRadius }, highlightStyle]} />
         <Animated.View
           pointerEvents="none"
           style={[styles.iconRow, iconRowStyle, { height: iconBandHeight, paddingBottom: bottomInset }]}
         >
           <SkipIcon size={iconSize} direction="back" transport={transportKeys} />
-          {transportKeys ? <View /> : <InfoIcon size={iconSize} />}
-          {transportKeys ? <View /> : <CaptionsIcon size={iconSize} />}
+          {/* Info and Captions send no command from the pad, so they read as secondary to the live skip keys. */}
+          {transportKeys ? <View /> : <InfoIcon size={iconSize} color={COLORS.iconSecondary} />}
+          {transportKeys ? <View /> : <CaptionsIcon size={iconSize} color={COLORS.iconSecondary} />}
           <SkipIcon size={iconSize} direction="forward" transport={transportKeys} />
         </Animated.View>
       </View>
