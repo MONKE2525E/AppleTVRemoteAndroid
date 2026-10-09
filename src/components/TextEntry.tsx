@@ -40,10 +40,11 @@ export function TextEntryPrompt() {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const sync = useTextSync();
-  // The TV re-reports the pre-send text after our own edits, so remember what
-  // we typed and the snapshot it was typed over. Reuse it only while the TV
-  // still reports that same snapshot (no newer information from the TV).
-  const typed = useRef<{ text: string; base: string | null } | null>(null);
+  // The TV re-reports the pre-send text after each of our own edits, so the
+  // snapshot it reports trails what we typed. Remember the latest text plus
+  // every value we know to be stale (the original text and each earlier edit),
+  // and reuse the latest text while the TV only reports one of those.
+  const typed = useRef<{ text: string; stale: Set<string> } | null>(null);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   // The field lost focus on the TV (submitted, cancelled, navigated away), so
@@ -68,12 +69,14 @@ export function TextEntryPrompt() {
 
   const show = () => {
     const last = typed.current;
-    setValue(last && last.base === textInput.current ? last.text : textInput.current ?? '');
+    setValue(last && last.stale.has(textInput.current ?? '') ? last.text : textInput.current ?? '');
     setOpen(true);
   };
   const onChangeText = (text: string) => {
     setValue(text);
-    typed.current = { text, base: typed.current?.base ?? textInput.current };
+    const stale = typed.current?.stale ?? new Set([textInput.current ?? '']);
+    if (typed.current) stale.add(typed.current.text);
+    typed.current = { text, stale };
     sync(text);
   };
 
