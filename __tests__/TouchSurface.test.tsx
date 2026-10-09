@@ -43,8 +43,10 @@ test('screen-reader activation selects and exposes directional actions', async (
   jest.mocked(NativeAppleTV.pressButton).mockClear();
   surface.props.onAccessibilityTap();
   expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('SELECT');
+  surface.props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('SELECT');
   surface.props.onAccessibilityAction({ nativeEvent: { actionName: 'left' } });
   expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('LEFT');
-  expect(surface.props.accessibilityActions.map((a: { name: string }) => a.name)).toEqual(['up', 'down', 'left', 'right']);
+  expect(surface.props.accessibilityActions.map((a: { name: string }) => a.name)).toEqual(['activate', 'up', 'down', 'left', 'right']);
   await ReactTestRenderer.act(() => { renderer!.unmount(); });
 });

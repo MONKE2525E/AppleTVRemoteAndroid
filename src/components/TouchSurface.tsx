@@ -24,6 +24,7 @@ const SWIPE_MIN = 24;
 
 const A11Y_DIRECTIONS: Record<string, RemoteButton> = { up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT' };
 const A11Y_ACTIONS = [
+  { name: 'activate', label: 'Select' },
   { name: 'up', label: 'Up' },
   { name: 'down', label: 'Down' },
   { name: 'left', label: 'Left' },
@@ -141,8 +142,9 @@ export function TouchSurface({
         accessibilityActions={A11Y_ACTIONS}
         onAccessibilityTap={handleSelect}
         onAccessibilityAction={event => {
-          const direction = A11Y_DIRECTIONS[event.nativeEvent.actionName];
-          if (direction) handleDirection(direction);
+          const { actionName } = event.nativeEvent;
+          if (actionName === 'activate') handleSelect();
+          else if (A11Y_DIRECTIONS[actionName]) handleDirection(A11Y_DIRECTIONS[actionName]);
         }}
         style={[styles.surface, { width, height, borderRadius }]}
       >
