@@ -51,3 +51,12 @@ the coroutine is cancelled while holding a key. Release runs outside cancellatio
 with a 1.5-second timeout, and preserves the original error when release also
 fails. `ButtonPressTest` covers cancellation and failed acknowledgements. Retain
 this patch when re-vendoring until upstream guarantees the same behavior.
+
+## Companion request cancellation patch
+
+`CompanionClient.exchange` removes its pending waiter in a finally block after
+success, send failure, timeout, or cancellation. `withTimeoutOrNull` converts only
+the request's own deadline into a protocol timeout, preserving cancellation from
+an enclosing caller deadline. A framed transport contract permits deterministic
+fake transport tests without opening sockets. Retain this patch when re-vendoring
+until upstream covers these cases.

@@ -40,6 +40,17 @@ enum class FrameType(val value: Int) {
 
 class Frame(val type: FrameType, val payload: ByteArray)
 
+/** Framed connection contract, also used by synthetic protocol tests. */
+interface CompanionTransport {
+    var onFrame: ((Frame) -> Unit)?
+    var onClosed: ((Throwable?) -> Unit)?
+    val isConnected: Boolean
+    suspend fun connect(timeoutMs: Int = 5000)
+    fun send(type: FrameType, payload: ByteArray)
+    fun enableEncryption(outputKey: ByteArray, inputKey: ByteArray)
+    fun close()
+}
+
 /**
  * Raw framed transport for the Companion Link protocol.
  *
@@ -52,7 +63,7 @@ class CompanionConnection(
     private val host: String,
     private val port: Int,
     private val scope: CoroutineScope,
-) {
+) : CompanionTransport {
     private var socket: Socket? = null
     private var input: DataInputStream? = null
     private var readerJob: Job? = null
@@ -61,12 +72,12 @@ class CompanionConnection(
     /** Guards the outbound path; the cipher's counter must advance in order. */
     private val sendLock = Any()
 
-    var onFrame: ((Frame) -> Unit)? = null
-    var onClosed: ((Throwable?) -> Unit)? = null
+    override var onFrame: ((Frame) -> Unit)? = null
+    override var onClosed: ((Throwable?) -> Unit)? = null
 
-    val isConnected: Boolean get() = socket?.isConnected == true && socket?.isClosed == false
+    override val isConnected: Boolean get() = socket?.isConnected == true && socket?.isClosed == false
 
-    suspend fun connect(timeoutMs: Int = 5000) = withContext(Dispatchers.IO) {
+    override suspend fun connect(timeoutMs: Int) = withContext(Dispatchers.IO) {
         val s = Socket()
         s.tcpNoDelay = true
         // Lets the OS notice a peer that vanished without a clean shutdown.
@@ -77,11 +88,11 @@ class CompanionConnection(
         readerJob = scope.launch(Dispatchers.IO) { readLoop() }
     }
 
-    fun enableEncryption(outputKey: ByteArray, inputKey: ByteArray) {
+    override fun enableEncryption(outputKey: ByteArray, inputKey: ByteArray) {
         cipher = ChaChaCipher(outputKey, inputKey, nonceLength = 12)
     }
 
-    fun send(type: FrameType, payload: ByteArray) {
+    override fun send(type: FrameType, payload: ByteArray) {
         val out = socket?.getOutputStream() ?: throw IOException("not connected")
         try {
             sendLocked(out, type, payload)
@@ -150,7 +161,7 @@ class CompanionConnection(
         }
     }
 
-    fun close() {
+    override fun close() {
         readerJob?.cancel()
         runCatching { socket?.close() }
         socket = null
