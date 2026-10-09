@@ -15,7 +15,7 @@ interface PairingScreenProps {
 
 type Stage =
   | { kind: 'browsing' }
-  | { kind: 'pin'; device: AppleTVDeviceInfo; submitting: boolean; error: string | null };
+  | { kind: 'pin'; device: AppleTVDeviceInfo; submitting: boolean; error: string | null; pairingReady: boolean };
 
 /**
  * First-run discovery + PIN pairing, and the retry/forget path for a failed
@@ -140,41 +140,62 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
   }
 
   if (stage.kind === 'pin') {
-    const { device, submitting, error } = stage;
+    const { device, submitting, error, pairingReady } = stage;
     const submit = async () => {
       setStage({ ...stage, submitting: true, error: null });
       try {
         await commands.submitPin(device.id, pin);
         setPin('');
       } catch (e) {
-        setStage({ kind: 'pin', device, submitting: false, error: (e as Error).message ?? 'Incorrect code' });
+        setPin('');
+        setStage({ kind: 'pin', device, submitting: false, pairingReady: false,
+          error: (e as Error).message ?? 'Pairing failed. Try again.' });
+      }
+    };
+    const retry = async () => {
+      setPin('');
+      setStage({ kind: 'pin', device, submitting: true, pairingReady: false, error: null });
+      try {
+        await commands.startPairing(device.id);
+        setStage({ kind: 'pin', device, submitting: false, pairingReady: true, error: null });
+      } catch (e) {
+        setStage({ kind: 'pin', device, submitting: false, pairingReady: false,
+          error: (e as Error).message ?? 'Could not start pairing. Try again.' });
       }
     };
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Enter the code shown on {device.name}</Text>
-        <Text style={styles.status}>
-          A 4-digit code should appear on the TV. If it doesn’t, press a button on the Siri Remote and try pairing again.
-        </Text>
-        <TextInput
-          value={pin}
-          onChangeText={setPin}
-          keyboardType="number-pad"
-          maxLength={4}
-          autoFocus
-          style={styles.pinInput}
-          placeholder="0000"
-          placeholderTextColor={COLORS.textSecondary}
-        />
+        <Text style={styles.title}>{pairingReady ? `Enter the code shown on ${device.name}` : `Pair again with ${device.name}`}</Text>
+        {pairingReady ? (
+          <>
+            <Text style={styles.status}>
+              A 4-digit code should appear on the TV. If it doesn’t, press a button on the Siri Remote and try pairing again.
+            </Text>
+            <TextInput
+              accessibilityLabel="Companion pairing code"
+              value={pin}
+              onChangeText={setPin}
+              keyboardType="number-pad"
+              maxLength={4}
+              autoFocus
+              style={styles.pinInput}
+              placeholder="0000"
+              placeholderTextColor={COLORS.textSecondary}
+            />
+          </>
+        ) : null}
         {error && <Text style={styles.error}>{error}</Text>}
         <PressableScale
           style={styles.primaryButton}
-          disabled={pin.length < 4 || submitting}
-          onPress={submit}
+          accessibilityLabel={pairingReady ? 'Submit pairing PIN' : 'Retry pairing'}
+          disabled={submitting || (pairingReady && pin.length < 4)}
+          onPress={pairingReady ? submit : retry}
         >
-          {submitting ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.primaryButtonLabel}>Pair</Text>}
+          {submitting ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.primaryButtonLabel}>{pairingReady ? 'Pair' : 'Try again'}</Text>}
         </PressableScale>
         <PressableScale
+          accessibilityLabel="Cancel pairing"
+          disabled={submitting}
           style={styles.secondaryButton}
           onPress={() => {
             commands.cancelPairing(device.id);
@@ -213,6 +234,7 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
       {appleTvs.map(device => (
         <Pressable
           key={device.id}
+          accessibilityLabel={`Pair with ${device.name}`}
           style={styles.deviceRow}
           disabled={busyId != null}
           onPress={async () => {
@@ -224,7 +246,7 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
                 return;
               }
               await commands.startPairing(device.id);
-              setStage({ kind: 'pin', device, submitting: false, error: null });
+              setStage({ kind: 'pin', device, submitting: false, error: null, pairingReady: true });
             } catch (e) {
               setBrowseError((e as Error).message ?? 'Could not start pairing. Is the TV awake?');
               commands.startDiscovery();

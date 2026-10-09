@@ -5,3 +5,5 @@ rootProject.name = 'com.privateremote.appletv'
 include ':app'
 include ':protocol'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+// Opt-in instrumentation fixture; never a dependency of the shipped app.
+if (providers.gradleProperty('includeNetworkTestVpn').isPresent()) include ':network-test-vpn'

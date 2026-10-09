@@ -54,7 +54,13 @@ class AirPlayConnection(private val host: String, private val port: Int) {
     suspend fun connect(timeoutMs: Int = 5000) = withContext(Dispatchers.IO) {
         val s = Socket()
         s.tcpNoDelay = true
-        s.connect(InetSocketAddress(host, port), timeoutMs)
+        s.soTimeout = timeoutMs
+        try {
+            s.connect(InetSocketAddress(host, port), timeoutMs)
+        } catch (e: Exception) {
+            s.close()
+            throw e
+        }
         socket = s
         localIp = (s.localAddress?.hostAddress) ?: ""
     }

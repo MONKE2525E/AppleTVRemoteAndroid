@@ -52,6 +52,13 @@ with a 1.5-second timeout, and preserves the original error when release also
 fails. `ButtonPressTest` covers cancellation and failed acknowledgements. Retain
 this patch when re-vendoring until upstream guarantees the same behavior.
 
+## AirPlay response timeout
+
+`AirPlayConnection.connect` applies its timeout to socket reads as well as TCP
+connection establishment and closes a socket when connect fails. A VPN or peer
+that accepts TCP but never returns a pairing response must not leave the
+blocking HTTP/RTSP reader waiting forever. Retain this patch when re-vendoring.
+
 ## Companion request cancellation patch
 
 `CompanionClient.exchange` removes its pending waiter in a finally block after
