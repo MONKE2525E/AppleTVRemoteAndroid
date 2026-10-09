@@ -22,6 +22,14 @@ interface TouchSurfaceProps {
 
 const SWIPE_MIN = 24;
 
+const A11Y_DIRECTIONS: Record<string, RemoteButton> = { up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT' };
+const A11Y_ACTIONS = [
+  { name: 'up', label: 'Up' },
+  { name: 'down', label: 'Down' },
+  { name: 'left', label: 'Left' },
+  { name: 'right', label: 'Right' },
+];
+
 /**
  * Discrete pad: tap = Select, swipe = one arrow. Continuous HID touch was
  * gimmicky (taps didn't click, swipes reversed/doubled).
@@ -128,7 +136,14 @@ export function TouchSurface({
       <View
         accessible
         accessibilityLabel="Touch surface"
-        accessibilityHint="Tap to select. Swipe to move."
+        accessibilityRole="button"
+        accessibilityHint="Double tap to select. Use actions to move."
+        accessibilityActions={A11Y_ACTIONS}
+        onAccessibilityTap={handleSelect}
+        onAccessibilityAction={event => {
+          const direction = A11Y_DIRECTIONS[event.nativeEvent.actionName];
+          if (direction) handleDirection(direction);
+        }}
         style={[styles.surface, { width, height, borderRadius }]}
       >
         <Animated.View pointerEvents="none" style={[styles.highlight, { borderRadius }, highlightStyle]} />
