@@ -22,6 +22,15 @@ interface TouchSurfaceProps {
 
 const SWIPE_MIN = 24;
 
+const A11Y_DIRECTIONS: Record<string, RemoteButton> = { up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT' };
+const A11Y_ACTIONS = [
+  { name: 'activate', label: 'Select' },
+  { name: 'up', label: 'Up' },
+  { name: 'down', label: 'Down' },
+  { name: 'left', label: 'Left' },
+  { name: 'right', label: 'Right' },
+];
+
 /**
  * Discrete pad: tap = Select, swipe = one arrow. Continuous HID touch was
  * gimmicky (taps didn't click, swipes reversed/doubled).
@@ -125,15 +134,29 @@ export function TouchSurface({
 
   return (
     <GestureDetector gesture={composed}>
-      <View style={[styles.surface, { width, height, borderRadius }]}>
+      <View
+        accessible
+        accessibilityLabel="Touch surface"
+        accessibilityRole="button"
+        accessibilityHint="Double tap to select. Use actions to move."
+        accessibilityActions={A11Y_ACTIONS}
+        onAccessibilityTap={handleSelect}
+        onAccessibilityAction={event => {
+          const { actionName } = event.nativeEvent;
+          if (actionName === 'activate') handleSelect();
+          else if (A11Y_DIRECTIONS[actionName]) handleDirection(A11Y_DIRECTIONS[actionName]);
+        }}
+        style={[styles.surface, { width, height, borderRadius }]}
+      >
         <Animated.View pointerEvents="none" style={[styles.highlight, { borderRadius }, highlightStyle]} />
         <Animated.View
           pointerEvents="none"
           style={[styles.iconRow, iconRowStyle, { height: iconBandHeight, paddingBottom: bottomInset }]}
         >
           <SkipIcon size={iconSize} direction="back" transport={transportKeys} />
-          {transportKeys ? <View /> : <InfoIcon size={iconSize} />}
-          {transportKeys ? <View /> : <CaptionsIcon size={iconSize} />}
+          {/* Info and Captions send no command from the pad, so they read as secondary to the live skip keys. */}
+          {transportKeys ? <View /> : <InfoIcon size={iconSize} color={COLORS.iconSecondary} />}
+          {transportKeys ? <View /> : <CaptionsIcon size={iconSize} color={COLORS.iconSecondary} />}
           <SkipIcon size={iconSize} direction="forward" transport={transportKeys} />
         </Animated.View>
       </View>

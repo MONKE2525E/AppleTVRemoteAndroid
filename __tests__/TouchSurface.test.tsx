@@ -32,3 +32,21 @@ test('a long swipe sends one direction, and the next swipe sends another', async
   await ReactTestRenderer.act(() => { renderer!.unmount(); });
   panSpy.mockRestore();
 });
+
+test('screen-reader activation selects and exposes directional actions', async () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(() => {
+    renderer = ReactTestRenderer.create(<GestureHandlerRootView><TouchSurface width={320} height={400} borderRadius={24} scale={1}
+      showContextualIcons={false} onSkipBack={() => {}} onSkipForward={() => {}} /></GestureHandlerRootView>);
+  });
+  const surface = renderer!.root.findAll(n => n.props.accessibilityLabel === 'Touch surface' && n.props.onAccessibilityTap)[0];
+  jest.mocked(NativeAppleTV.pressButton).mockClear();
+  surface.props.onAccessibilityTap();
+  expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('SELECT');
+  surface.props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+  expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('SELECT');
+  surface.props.onAccessibilityAction({ nativeEvent: { actionName: 'left' } });
+  expect(NativeAppleTV.pressButton).toHaveBeenLastCalledWith('LEFT');
+  expect(surface.props.accessibilityActions.map((a: { name: string }) => a.name)).toEqual(['activate', 'up', 'down', 'left', 'right']);
+  await ReactTestRenderer.act(() => { renderer!.unmount(); });
+});
