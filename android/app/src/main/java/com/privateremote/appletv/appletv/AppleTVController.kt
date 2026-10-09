@@ -390,7 +390,7 @@ class AppleTVController(
                     throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "reconnect attempt ${attempt + 1} failed", e)
-                    if (e is HapException) return@launch
+                    if (e is HapException || e is VpnConnectionFailure) return@launch
                 }
                 attempt++
             }
