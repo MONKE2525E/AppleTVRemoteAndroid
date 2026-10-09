@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -40,12 +40,22 @@ export function TextEntryPrompt() {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const sync = useTextSync();
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   // The field lost focus on the TV (submitted, cancelled, navigated away), so
   // there is nothing left to type into.
   useEffect(() => {
     if (!textInput.focused) setOpen(false);
   }, [textInput.focused]);
+
+  // autoFocus is unreliable inside an Android Modal: the input can mount
+  // before the window can take focus, leaving the keyboard down. Focus
+  // explicitly once the dialog is up, with a retry for slow transitions.
+  useEffect(() => {
+    if (!open) return;
+    const timers = [60, 250].map(ms => setTimeout(() => inputRef.current?.focus(), ms));
+    return () => timers.forEach(clearTimeout);
+  }, [open]);
 
   if (!textInput.focused) return null;
 
@@ -64,26 +74,44 @@ export function TextEntryPrompt() {
         <KeyboardIcon size={20} />
         <Text style={styles.pillText}>Type with keyboard</Text>
       </PressableScale>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onShow={() => inputRef.current?.focus()}
+        onRequestClose={() => setOpen(false)}
+      >
         <View style={styles.overlay}>
           <View style={styles.dialog}>
-            <Text style={styles.title}>Type on TV</Text>
-            <TextInput
-              value={value}
-              onChangeText={onChangeText}
-              onSubmitEditing={() => setOpen(false)}
-              autoFocus
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="done"
-              accessibilityLabel="Text to send to TV"
-              placeholder="Text appears on your TV as you type"
-              placeholderTextColor={COLORS.textSecondary}
-              style={styles.input}
-            />
-            <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Done typing">
-              <Text style={styles.done}>Done</Text>
-            </Pressable>
+            <View style={styles.header}>
+              <KeyboardIcon size={18} color={COLORS.iconSecondary} />
+              <Text style={styles.title}>Type on TV</Text>
+            </View>
+            <View style={styles.field}>
+              <TextInput
+                ref={inputRef}
+                value={value}
+                onChangeText={onChangeText}
+                onSubmitEditing={() => setOpen(false)}
+                autoFocus
+                blurOnSubmit={false}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="done"
+                accessibilityLabel="Text to send to TV"
+                placeholder="Appears on your TV as you type"
+                placeholderTextColor={COLORS.textSecondary}
+                selectionColor="rgba(255,255,255,0.35)"
+                cursorColor={COLORS.icon}
+                selectionHandleColor={COLORS.icon}
+                underlineColorAndroid="transparent"
+                style={styles.input}
+              />
+            </View>
+            <PressableScale onPress={() => setOpen(false)} accessibilityLabel="Done typing" style={styles.done}>
+              <Text style={styles.doneText}>Done</Text>
+            </PressableScale>
           </View>
         </View>
       </Modal>
@@ -105,9 +133,19 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   pillText: { color: COLORS.icon, fontSize: 15, fontWeight: '600' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-start', padding: 24, paddingTop: 96 },
-  dialog: { backgroundColor: '#1C1C1E', padding: 24, borderRadius: 20, gap: 20 },
-  title: { color: COLORS.icon, fontSize: 18, textAlign: 'center' },
-  input: { color: COLORS.icon, fontSize: 22, borderBottomWidth: 1, borderColor: COLORS.separator, paddingVertical: 8 },
-  done: { color: COLORS.accent, fontSize: 17, fontWeight: '600', textAlign: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', padding: 20, paddingTop: 64 },
+  dialog: {
+    backgroundColor: '#141414',
+    borderRadius: 32,
+    padding: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: COLORS.touchSurfaceBorder,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  title: { color: COLORS.iconSecondary, fontSize: 15, fontWeight: '600' },
+  field: { backgroundColor: COLORS.controlFill, borderRadius: 22, paddingHorizontal: 18, minHeight: 56, justifyContent: 'center' },
+  input: { color: COLORS.icon, fontSize: 20, paddingVertical: 12 },
+  done: { height: 48, borderRadius: 24, backgroundColor: COLORS.controlFillPressed, alignItems: 'center', justifyContent: 'center' },
+  doneText: { color: COLORS.icon, fontSize: 16, fontWeight: '600' },
 });
