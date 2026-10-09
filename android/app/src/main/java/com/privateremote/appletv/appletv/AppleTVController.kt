@@ -208,7 +208,12 @@ class AppleTVController(
     suspend fun submitAirPlayPin(deviceId: String, pin: String): Boolean {
         val pairing = airplayPairing ?: throw IllegalStateException("No AirPlay pairing in progress")
         val device = airplayPairingDevice ?: throw IllegalStateException("No AirPlay pairing in progress")
-        val credentials = pairing.complete(pin)
+        val credentials = try {
+            pairing.complete(pin)
+        } catch (e: Exception) {
+            closeAirPlayPairing()
+            throw connectionFailure(e)
+        }
         store.saveAirPlay(device.credentialKey, credentials)
         closeAirPlayPairing()
         startNowPlaying(device)

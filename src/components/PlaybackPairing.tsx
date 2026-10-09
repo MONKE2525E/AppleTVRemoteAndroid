@@ -35,6 +35,8 @@ export function PlaybackPairing({ deviceId, deviceName, prominent = false }: { d
       await appleTV.submitAirPlayPin(deviceId, pin);
       setOpen(false);
     } catch (e) {
+      setStarted(false);
+      setPin('');
       setError((e as Error).message || 'Pairing failed. Check the code and try again.');
     } finally {
       setBusy(false);
