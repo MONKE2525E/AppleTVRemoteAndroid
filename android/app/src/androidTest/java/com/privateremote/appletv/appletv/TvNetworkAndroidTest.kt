@@ -25,8 +25,8 @@ class TvNetworkAndroidTest {
         val store = CredentialStore(context)
         val previous = store.loadLastDevice()
         val device = AppleTvDevice("VPN test TV", host!!, 8060, identifier = "roku:vpn-fixture")
-        store.saveLastDevice(device)
         Socket().use { it.connect(InetSocketAddress(host, 18061), 1500) }
+        store.saveLastDevice(device)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val controller = AppleTVController(context, scope)
         try {
