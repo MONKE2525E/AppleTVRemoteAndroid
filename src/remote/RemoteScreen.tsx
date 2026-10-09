@@ -11,6 +11,7 @@ import { PressableScale } from '../components/PressableScale';
 import { TopBar } from '../components/TopBar';
 import { ButtonPad } from '../components/ButtonPad';
 import { TouchSurface } from '../components/TouchSurface';
+import { TextEntryPrompt } from '../components/TextEntry';
 import { TransportRow } from '../components/TransportRow';
 import { PlaybackPairing } from '../components/PlaybackPairing';
 import { AddAppleTvModal } from '../components/AddAppleTvModal';
@@ -196,6 +197,7 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
+          {!isRoku && <TextEntryPrompt />}
           {padHeight > 0 && (inputMode === 'buttons' ? (
             <ButtonPad
               width={touchSurfaceWidth}
