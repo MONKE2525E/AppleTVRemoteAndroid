@@ -1,6 +1,8 @@
 package com.privateremote.appletv.appletv
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import dev.atvremote.protocol.airplay.AirPlayAuth
 import dev.atvremote.protocol.airplay.AirPlayConnection
@@ -151,11 +153,16 @@ class AppleTVController(
         stopDiscovery()
         closePairing()
         val client = CompanionClient(device.address, device.port, scope)
-        client.connect()
-        Log.i(TAG, "companion TCP connected, sending pair-setup M1")
-        pairingSession = client.startPairing(deviceName)
         pairingClient = client
-        pairingDevice = device
+        try {
+            client.connect()
+            Log.i(TAG, "companion TCP connected, sending pair-setup M1")
+            pairingSession = client.startPairing(deviceName)
+            pairingDevice = device
+        } catch (e: Exception) {
+            closePairing()
+            throw connectionFailure(e)
+        }
         Log.i(TAG, "pair-setup M2 received — PIN should now be on the TV")
     }
 
@@ -194,7 +201,7 @@ class AppleTVController(
             airplayPairingDevice = device
         } catch (e: Exception) {
             closeAirPlayPairing()
-            throw e
+            throw connectionFailure(e)
         }
     }
 
@@ -216,6 +223,13 @@ class AppleTVController(
         airplayPairingDevice = null
     }
 
+    private fun connectionFailure(error: Exception): Exception {
+        val connectivity = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val vpnActive = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+            ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        return vpnConnectionFailure(error, vpnActive)
+    }
+
     // -------------------------------------------------------- connection
 
     private fun deviceFor(deviceId: String): AppleTvDevice? =
@@ -235,7 +249,10 @@ class AppleTVController(
                     } catch (e: CancellationException) { throw e }
                     catch (e: Exception) { Log.w(TAG, "Reconnect discovery failed", e) }
                 }
-            }) { connectDevice(deviceId) }
+            }) {
+                try { connectDevice(deviceId) }
+                catch (e: Exception) { throw connectionFailure(e) }
+            }
         } catch (e: Exception) {
             if (e is CancellationException && e !is TimeoutCancellationException) throw e
             val stale = e is HapException || (!device.isRoku && store.loadCompanion(deviceId) == null)

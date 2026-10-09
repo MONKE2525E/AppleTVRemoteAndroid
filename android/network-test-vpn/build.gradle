@@ -1,0 +1,20 @@
+apply plugin: 'com.android.application'
+android {
+    namespace 'com.privateremote.networktestvpn'
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId 'com.privateremote.networktestvpn'
+        minSdk 26
+        targetSdk 28
+        versionCode 1
+        versionName '1'
+    }
+    signingConfigs {
+        debug {
+            storeFile new File(System.getProperty('user.home'), '.android/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+}
