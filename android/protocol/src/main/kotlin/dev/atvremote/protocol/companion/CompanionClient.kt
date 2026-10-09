@@ -10,8 +10,9 @@ import dev.atvremote.protocol.hap.TlvValue
 import dev.atvremote.protocol.opack.Opack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -31,12 +32,13 @@ private const val MSG_RESPONSE = 3L
  * every connection, proves possession of those credentials, and produces the
  * per-session ChaCha20 keys.
  */
-class CompanionClient(
+class CompanionClient internal constructor(
     val host: String,
     val port: Int,
-    private val scope: CoroutineScope,
+    private val connection: CompanionTransport,
 ) {
-    private val connection = CompanionConnection(host, port, scope)
+    constructor(host: String, port: Int, scope: CoroutineScope) :
+        this(host, port, CompanionConnection(host, port, scope))
     private val xid = AtomicInteger(1)
 
     /** Pending replies keyed by XID (OPACK) or frame type (auth handshakes). */
@@ -132,11 +134,12 @@ class CompanionClient(
         val deferred = CompletableDeferred<Map<Any?, Any?>>()
         pending[key] = deferred
         try {
+            currentCoroutineContext().ensureActive()
             connection.send(type, Opack.pack(payload))
-            return withTimeout(timeoutMs) { deferred.await() }
-        } catch (e: TimeoutCancellationException) {
-            pending.remove(key)
-            throw ProtocolException("timed out waiting for response to $type")
+            return withTimeoutOrNull(timeoutMs) { deferred.await() }
+                ?: throw ProtocolException("timed out waiting for response to $type")
+        } finally {
+            pending.remove(key, deferred)
         }
     }
 

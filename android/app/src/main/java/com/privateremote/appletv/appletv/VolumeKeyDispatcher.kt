@@ -2,6 +2,9 @@ package com.privateremote.appletv.appletv
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -34,7 +37,9 @@ internal class VolumeKeyDispatcher(
                 try {
                     send(press.up)
                 } catch (e: CancellationException) {
-                    throw e
+                    currentCoroutineContext().ensureActive()
+                    if (e !is TimeoutCancellationException) throw e
+                    onError(e)
                 } catch (e: Exception) {
                     onError(e)
                 } finally {

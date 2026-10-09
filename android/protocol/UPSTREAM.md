@@ -58,3 +58,14 @@ this patch when re-vendoring until upstream guarantees the same behavior.
 connection establishment and closes a socket when connect fails. A VPN or peer
 that accepts TCP but never returns a pairing response must not leave the
 blocking HTTP/RTSP reader waiting forever. Retain this patch when re-vendoring.
+
+## Companion request cancellation patch
+
+`CompanionClient.exchange` removes its pending waiter in a finally block after
+success, send failure, timeout, or cancellation. `withTimeoutOrNull` converts only
+the request's own deadline into a protocol timeout, preserving cancellation from
+an enclosing caller deadline. A framed transport contract permits deterministic
+fake transport tests without opening sockets. Retain this patch when re-vendoring
+until upstream covers these cases.
+An activity check before sending also prevents an already cancelled caller from
+writing a new command.
