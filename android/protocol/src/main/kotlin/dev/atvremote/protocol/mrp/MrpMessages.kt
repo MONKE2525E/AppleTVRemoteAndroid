@@ -110,6 +110,13 @@ object Mrp {
         )
         .build()
 
+    fun playbackQueueArtwork(location: Int, identifier: String): ByteArray = Protobuf.Builder()
+        .varint(FIELD_TYPE, 32)
+        .string(FIELD_IDENTIFIER, identifier)
+        .bytes(37, Protobuf.Builder().varint(1, location.toLong()).varint(2, 1)
+            .double(4, 1024.0).double(5, 1024.0).bool(13, true).build())
+        .build()
+
     /** Ask the device to push now-playing and artwork updates. */
     fun clientUpdatesConfig(): ByteArray = Protobuf.Builder()
         .varint(FIELD_TYPE, TYPE_CLIENT_UPDATES_CONFIG.toLong())
@@ -189,7 +196,7 @@ data class NowPlaying(
             album == other.album && appName == other.appName &&
             playbackState == other.playbackState &&
             duration == other.duration && elapsedTime == other.elapsedTime &&
-            (artwork?.size ?: 0) == (other.artwork?.size ?: 0)
+            (artwork?.contentEquals(other.artwork) ?: (other.artwork == null))
 
     override fun hashCode(): Int =
         listOf(title, artist, album, appName, playbackState, duration, elapsedTime).hashCode()

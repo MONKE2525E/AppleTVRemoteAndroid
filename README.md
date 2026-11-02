@@ -243,3 +243,11 @@ volume are not implemented. Attempting to pair or connect returns
 for playback details. Playback transfer and audio output routing are not yet
 implemented; `transferPlayback` reports `TRANSFER_UNSUPPORTED`. No video
 handoff is provided. These paths have not been verified with physical receivers.
+
+When MRP does not provide artwork, the app may search the iTunes catalog using
+the current title and artist. It accepts only exact title and artist matches
+for music, caches successful images locally, and uses the result in playback
+notifications and `artworkChanged`. This sends those metadata fields to Apple.
+It cannot reliably identify YouTube videos or supply their thumbnails when the
+playing app does not expose them. Artwork requests and Samsung notification
+rendering still require verification on real hardware.

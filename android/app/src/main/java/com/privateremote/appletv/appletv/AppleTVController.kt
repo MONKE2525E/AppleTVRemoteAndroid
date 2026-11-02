@@ -17,6 +17,8 @@ import dev.atvremote.protocol.hap.HapException
 import dev.atvremote.protocol.companion.MediaCapabilities
 import dev.atvremote.protocol.mrp.NowPlaying
 import dev.atvremote.protocol.mrp.PlaybackState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -55,6 +57,9 @@ class AppleTVController(
     @Volatile private var roku: RokuRemote? = null
     private val store = CredentialStore(appContext)
     private val deviceName = "Android Remote"
+    private val artworkLookup = ArtworkLookup(appContext)
+    private var artworkJob: Job? = null
+    private var artworkKey: Triple<String, String, String>? = null
 
     var listener: AppleTVListener? = null
 
@@ -260,13 +265,8 @@ class AppleTVController(
                 ?.also { devicesById[deviceId] = it }
 
     suspend fun transferPlayback(targetDeviceId: String) {
-        try {
-            if (deviceFor(targetDeviceId) == null) throw IllegalArgumentException("Unknown target $targetDeviceId")
-            throw TransferUnsupportedException()
-        } catch (e: Exception) {
-            listener?.onCommandError("transferPlayback", if (e is TransferUnsupportedException) "TRANSFER_UNSUPPORTED" else "UNKNOWN_TARGET")
-            throw e
-        }
+        if (deviceFor(targetDeviceId) == null) throw UnknownTargetException()
+        throw TransferUnsupportedException()
     }
 
     suspend fun connect(deviceId: String) = connectionGate.withLock {
@@ -509,8 +509,7 @@ class AppleTVController(
                 ap2 = session
                 session.onNowPlaying = { np ->
                     if (ap2 === session) {
-                        lastNowPlaying = np
-                        listener?.onPlaybackChanged(np)
+                        publishMrpPlayback(session, np)
                     }
                 }
                 session.onDisconnect = { closed.complete(Unit) }
@@ -540,6 +539,33 @@ class AppleTVController(
                 }
                 delay((1000L * (1L shl attempt.coerceAtMost(4))).coerceAtMost(15_000))
                 attempt++
+            }
+        }
+    }
+
+    private fun publishMrpPlayback(session: Ap2Session, playback: NowPlaying) {
+        val key = Triple(playback.title.orEmpty(), playback.artist.orEmpty(), playback.appName.orEmpty())
+        if (artworkKey != key || playback.artwork != null) {
+            artworkJob?.cancel()
+            artworkJob = null
+            artworkKey = key
+        }
+        val previous = lastNowPlaying
+        val resolved = if (playback.artwork == null && previous != null &&
+            Triple(previous.title.orEmpty(), previous.artist.orEmpty(), previous.appName.orEmpty()) == key) {
+            playback.copy(artwork = previous.artwork)
+        } else playback
+        lastNowPlaying = resolved
+        listener?.onPlaybackChanged(resolved)
+        if (resolved.artwork == null && key.first.isNotBlank() && key.second.isNotBlank() && artworkJob == null) {
+            artworkJob = scope.launch {
+                val bytes = withContext(Dispatchers.IO) { artworkLookup.find(key.first, key.second, key.third) }
+                val current = lastNowPlaying
+                if (bytes != null && ap2 === session && artworkKey == key && current != null && current.artwork == null) {
+                    val updated = current.copy(artwork = bytes)
+                    lastNowPlaying = updated
+                    listener?.onPlaybackChanged(updated)
+                }
             }
         }
     }
@@ -823,3 +849,5 @@ class AppleTVController(
 
 class TargetUnsupportedException : UnsupportedOperationException("This target is discoverable but control is not supported")
 class TransferUnsupportedException : UnsupportedOperationException("Playback output routing is not supported by this protocol implementation")
+
+class UnknownTargetException : IllegalArgumentException("Unknown playback target")

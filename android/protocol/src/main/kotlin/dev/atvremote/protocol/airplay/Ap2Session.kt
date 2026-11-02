@@ -41,6 +41,7 @@ class Ap2Session(
     /** Per-app state, keyed by bundle identifier. */
     private val clients = LinkedHashMap<String, NowPlaying>()
     private var activeBundleId: String? = null
+    private var artworkRequest: Triple<String, String, String>? = null
 
     var onNowPlaying: ((NowPlaying) -> Unit)? = null
     var onDisconnect: ((Throwable?) -> Unit)? = null
@@ -180,6 +181,22 @@ class Ap2Session(
             }
             "MRP type=$type $detail"
         }
+        val pending = artworkRequest
+        if (pending != null && message.string(Mrp.FIELD_IDENTIFIER) == pending.first) {
+            artworkRequest = null
+            val entry = clients[pending.second]
+            if (entry?.title == pending.third && (activeBundleId == null || activeBundleId == pending.second)) {
+                val queue = message.message(Mrp.EXT_SET_STATE)?.message(Mrp.STATE_PLAYBACK_QUEUE)
+                val image = queue?.messages(Mrp.QUEUE_CONTENT_ITEMS)?.firstOrNull()
+                    ?.bytes(Mrp.CI_ARTWORK_DATA)?.takeIf { it.isNotEmpty() }
+                if (image != null && entry.artwork == null) {
+                    val updated = entry.copy(artwork = image)
+                    clients[pending.second] = updated
+                    publish(updated)
+                }
+            }
+            return
+        }
         when (type) {
             Mrp.TYPE_SET_STATE -> applySetState(message.message(Mrp.EXT_SET_STATE))
             Mrp.TYPE_UPDATE_CONTENT_ITEM ->
@@ -216,6 +233,10 @@ class Ap2Session(
         // nowPlayingInfo is rarely populated in practice; real track metadata
         // travels in the playback queue's content items.
         state.message(Mrp.STATE_NOW_PLAYING_INFO)?.let { info ->
+            val newTitle = info.string(Mrp.NP_TITLE)
+            if (newTitle != null && entry.title != null && newTitle != entry.title) {
+                entry = entry.copy(artwork = null, duration = null, elapsedTime = null)
+            }
             entry = entry.copy(
                 title = info.string(Mrp.NP_TITLE) ?: entry.title,
                 artist = info.string(Mrp.NP_ARTIST) ?: entry.artist,
@@ -237,7 +258,10 @@ class Ap2Session(
 
         clients[bundleId] = entry
         Log.d { "setState bundle=$bundleId active=$activeBundleId -> ${entry.describe()}" }
-        if (bundleId == activeBundleId || activeBundleId == null) publish(entry)
+        if (bundleId == activeBundleId || activeBundleId == null) {
+            publish(entry)
+            requestArtworkIfNeeded(bundleId, entry, state.message(Mrp.STATE_PLAYBACK_QUEUE)?.varint(Mrp.QUEUE_LOCATION)?.toInt() ?: 0)
+        }
     }
 
     private fun applyContentItem(
@@ -246,11 +270,8 @@ class Ap2Session(
         priorTitle: String?,
     ): NowPlaying {
         var updated = current
-        item.bytes(Mrp.CI_ARTWORK_DATA)
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { updated = updated.copy(artwork = it) }
-
-        val metadata = item.message(Mrp.CI_METADATA) ?: return updated
+        val image = item.bytes(Mrp.CI_ARTWORK_DATA)?.takeIf { it.isNotEmpty() }
+        val metadata = item.message(Mrp.CI_METADATA) ?: return if (image != null) updated.copy(artwork = image) else updated
         val title = metadata.string(Mrp.META_TITLE)
 
         // A different item invalidates the playhead. Carrying the old one over
@@ -258,8 +279,10 @@ class Ap2Session(
         // the device volunteers a fresh timing update, which it need not do
         // until playback state next changes.
         if (title != null && priorTitle != null && title != priorTitle) {
-            updated = updated.copy(duration = null, elapsedTime = null)
+            updated = updated.copy(duration = null, elapsedTime = null, artwork = null)
         }
+
+        if (image != null) updated = updated.copy(artwork = image)
 
         val duration = metadata.double(Mrp.META_DURATION) ?: updated.duration
 
@@ -301,6 +324,17 @@ class Ap2Session(
         }
         clients[bundleId] = entry
         publish(entry)
+        requestArtworkIfNeeded(bundleId, entry, 0)
+    }
+
+    private fun requestArtworkIfNeeded(bundleId: String, entry: NowPlaying, location: Int) {
+        val title = entry.title ?: return
+        if (entry.artwork != null || artworkRequest?.let { it.second == bundleId && it.third == title } == true) return
+        val channel = dataChannel ?: return
+        val id = UUID.randomUUID().toString().uppercase()
+        artworkRequest = Triple(id, bundleId, title)
+        runCatching { channel.sendProtobuf(Mrp.playbackQueueArtwork(location, id)) }
+            .onFailure { artworkRequest = null }
     }
 
     private fun publish(state: NowPlaying) {

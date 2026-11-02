@@ -93,10 +93,17 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 }
             }
 
-            val listeners = listOf(COMPANION_SERVICE_TYPE, "_airplay._tcp", "_googlecast._tcp").map { type ->
-                listener().also { nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, it) }
-            }
+            val listeners = mutableListOf<NsdManager.DiscoveryListener>()
             try {
+                listOf(COMPANION_SERVICE_TYPE, "_airplay._tcp", "_googlecast._tcp").forEach { type ->
+                    val discoveryListener = listener()
+                    try {
+                        nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                        listeners.add(discoveryListener)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "NSD start failed type=$type", e)
+                    }
+                }
                 delay(timeoutMs)
                 found.close()
                 resolver.join()
