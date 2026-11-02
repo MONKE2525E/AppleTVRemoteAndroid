@@ -232,3 +232,14 @@ Pause, and checks removal on pause, stop and disconnect. Emulator verification
 covers the system media card. The user confirmed the preceding APK appears in
 Samsung's Now Bar; physical Apple TV and this revision's Samsung rendering still
 require hardware verification.
+
+## AirPlay targets
+
+Discovery lists AirPlay receivers, HomePods and Google Cast devices alongside
+Apple TVs and Roku devices. HomePods and other AirPlay/Cast receivers are
+display-only (`controllable: false`): their connection, playback controls and
+volume are not implemented. Attempting to pair or connect returns
+`TARGET_UNSUPPORTED`. The existing Apple TV AirPlay pairing remains available
+for playback details. Playback transfer and audio output routing are not yet
+implemented; `transferPlayback` reports `TRANSFER_UNSUPPORTED`. No video
+handoff is provided. These paths have not been verified with physical receivers.

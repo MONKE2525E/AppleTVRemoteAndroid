@@ -109,6 +109,9 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
     override fun connect(deviceId: String, promise: Promise) = launchPromise(promise) {
         requireController().connect(deviceId)
     }
+    override fun transferPlayback(targetDeviceId: String, promise: Promise) = launchPromise(promise) {
+        requireController().transferPlayback(targetDeviceId)
+    }
     override fun disconnect(promise: Promise) = launchPromise(promise) {
         requireController().disconnect()
     }
@@ -186,7 +189,12 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
                     else -> promise.resolve(null)
                 }
             } catch (e: Exception) {
-                promise.reject(e.javaClass.simpleName, e.message, e)
+                val code = when (e) {
+                    is TargetUnsupportedException -> "TARGET_UNSUPPORTED"
+                    is TransferUnsupportedException -> "TRANSFER_UNSUPPORTED"
+                    else -> e.javaClass.simpleName
+                }
+                promise.reject(code, e.message, e)
             }
         }
     }

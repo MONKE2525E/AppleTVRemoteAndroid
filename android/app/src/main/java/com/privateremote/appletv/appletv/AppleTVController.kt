@@ -149,6 +149,7 @@ class AppleTVController(
     suspend fun startPairing(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
         if (device.isRoku) { connect(deviceId); return }
+        if (!device.controllable) throw TargetUnsupportedException()
         Log.i(TAG, "startPairing ${device.name} ${device.address}:${device.port} id=$deviceId")
         stopDiscovery()
         closePairing()
@@ -206,6 +207,7 @@ class AppleTVController(
 
     suspend fun startAirPlayPairing(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        if (!device.controllable) throw TargetUnsupportedException()
         closeAirPlayPairing()
         val connection = AirPlayConnection(device.address, AIRPLAY_PORT)
         airplayConnection = connection
@@ -257,8 +259,19 @@ class AppleTVController(
             ?: store.loadLastDevice()?.takeIf { it.credentialKey == deviceId }
                 ?.also { devicesById[deviceId] = it }
 
+    suspend fun transferPlayback(targetDeviceId: String) {
+        try {
+            if (deviceFor(targetDeviceId) == null) throw IllegalArgumentException("Unknown target $targetDeviceId")
+            throw TransferUnsupportedException()
+        } catch (e: Exception) {
+            listener?.onCommandError("transferPlayback", if (e is TransferUnsupportedException) "TRANSFER_UNSUPPORTED" else "UNKNOWN_TARGET")
+            throw e
+        }
+    }
+
     suspend fun connect(deviceId: String) = connectionGate.withLock {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        if (!device.controllable) throw TargetUnsupportedException()
         try {
             retryConnection(beforeRetry = {
                 // Saved Companion ports and addresses can change while the app is closed.
@@ -807,3 +820,6 @@ class AppleTVController(
         const val HOLD_THROTTLE_NANOS = 12_000_000L
     }
 }
+
+class TargetUnsupportedException : UnsupportedOperationException("This target is discoverable but control is not supported")
+class TransferUnsupportedException : UnsupportedOperationException("Playback output routing is not supported by this protocol implementation")
