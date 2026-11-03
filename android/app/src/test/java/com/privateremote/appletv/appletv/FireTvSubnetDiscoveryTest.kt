@@ -56,4 +56,36 @@ class FireTvSubnetDiscoveryTest {
         } finally { dial.shutdown() }
     }
 
+    @Test fun `advertised service without a certificate can be activated and reconciled`() = runBlocking {
+        val dial = MockWebServer()
+        val remote = MockWebServer()
+        val cert = HeldCertificate.Builder().commonName("Fire TV").build()
+        remote.useHttps(HandshakeCertificates.Builder().heldCertificate(cert).build().sslSocketFactory(), false)
+        dial.start()
+        remote.start()
+        try {
+            val service = "<service><name>FireTVRemote</name></service>"
+            dial.enqueue(MockResponse().setBody(service))
+            remote.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.FAIL_HANDSHAKE))
+            assertNull(probeFireTv("127.0.0.1", dial.port, remote.port, allowActivation = false))
+            assertEquals(1, dial.requestCount)
+
+            dial.enqueue(MockResponse().setBody(service))
+            dial.enqueue(MockResponse().setResponseCode(200))
+            remote.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.FAIL_HANDSHAKE))
+            val activated = probeFireTv("127.0.0.1", dial.port, remote.port)!!
+            assertTrue(activated.identifier!!.startsWith("firetv:cert:"))
+            assertEquals("GET", dial.takeRequest().method)
+            assertEquals("GET", dial.takeRequest().method)
+            assertEquals("POST", dial.takeRequest().method)
+
+            val advertised = activated.copy(name = "Living room", identifier = "firetv:dial:uuid:test")
+            val aliases = mutableMapOf<String, String>()
+            val resolver = FireTvIdentities({ aliases[it] }, { id, canonical -> aliases[id] = canonical }, { it == activated.identifier })
+            resolver.resolve(advertised)
+            assertEquals(activated.identifier, resolver.resolve(activated).identifier)
+            assertEquals(activated.identifier, aliases[advertised.identifier])
+        } finally { dial.shutdown(); remote.shutdown() }
+    }
+
 }
