@@ -5,14 +5,95 @@ import dev.atvremote.protocol.mrp.PlaybackState
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.net.ServerSocket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.net.SocketTimeoutException
 
 class RokuRemoteTest {
+    @Test fun `an edit for a previous session is rejected after switching Roku`() {
+        val device = AppleTvDevice("Roku", "127.0.0.1", 8060, identifier = "roku:test")
+        val old = RokuRemote(device)
+        val replacement = RokuRemote(device)
+        assertSame(old, requireRokuSession(old, old.sessionId))
+        assertThrows(IOException::class.java) { requireRokuSession(replacement, old.sessionId) }
+        assertSame(replacement, requireRokuSession(replacement, replacement.sessionId))
+    }
+
+    @Test fun `closing the Roku session stops an in-flight text batch`() {
+        ServerSocket(0).use { server ->
+            val received = CountDownLatch(1)
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val requests = executor.submit<List<String>> {
+                    val lines = mutableListOf<String>()
+                    server.accept().use { client ->
+                        val input = client.getInputStream().bufferedReader()
+                        lines.add(requireNotNull(input.readLine()))
+                        while (input.readLine()?.isNotEmpty() == true) { }
+                        received.countDown()
+                        client.getInputStream().read()
+                    }
+                    server.soTimeout = 500
+                    try { server.accept().use { lines.add(requireNotNull(it.getInputStream().bufferedReader().readLine())) } }
+                    catch (_: SocketTimeoutException) { }
+                    lines
+                }
+                val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+                val remote = RokuRemote(device, server.localPort)
+                runBlocking {
+                    val send = async(Dispatchers.IO) { runCatching { remote.sendText("abc") } }
+                    assertTrue(received.await(3, TimeUnit.SECONDS))
+                    remote.close()
+                    assertTrue(withTimeout(3000) { send.await() }.isFailure)
+                }
+                assertEquals(listOf("POST /keypress/Lit_a HTTP/1.1"), requests.get(3, TimeUnit.SECONDS))
+            } finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test fun `text sends encoded characters and backspace in order`() {
+        val server = ServerSocket(0)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val requests = executor.submit<List<String>> {
+                (1..5).map {
+                    server.accept().use { client ->
+                        val input = client.getInputStream().bufferedReader()
+                        val firstLine = requireNotNull(input.readLine())
+                        val headers = generateSequence { input.readLine()?.takeIf(String::isNotEmpty) }.toList()
+                        assertTrue(headers.any { it.equals("Connection: close", ignoreCase = true) })
+                        client.getOutputStream().apply {
+                            write("HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                            flush()
+                        }
+                        firstLine
+                    }
+                }
+            }
+            val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+            runBlocking {
+                val remote = RokuRemote(device, server.localPort)
+                remote.sendText("a /€")
+                remote.press("BACKSPACE")
+            }
+            assertEquals(listOf(
+                "POST /keypress/Lit_a HTTP/1.1", "POST /keypress/Lit_%20 HTTP/1.1",
+                "POST /keypress/Lit_%2F HTTP/1.1", "POST /keypress/Lit_%E2%82%AC HTTP/1.1",
+                "POST /keypress/Backspace HTTP/1.1",
+            ), requests.get(3, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test fun `cancelling a Roku request interrupts an incomplete HTTP header`() {
         ServerSocket(0).use { server ->
             val executor = Executors.newSingleThreadExecutor()
@@ -33,6 +114,7 @@ class RokuRemoteTest {
             } finally { executor.shutdownNow() }
         }
     }
+
     @Test fun `document types cannot introduce entities into Roku responses`() {
         val xml = "<!DOCTYPE device-info [<!ENTITY serial 'injected'>]><device-info><serial-number>&serial;</serial-number></device-info>"
         assertThrows(IOException::class.java) { RokuRemote.parseDevice(xml, "192.168.1.10") }

@@ -82,6 +82,7 @@ class AppleTVController(
     private val volumeGate = Mutex()
     private val buttonGate = Mutex()
     private val connectionGate = Mutex()
+    private val textFocusGate = TextFocusGate()
 
     private var discoveryJob: Job? = null
     private var nowPlayingJob: Job? = null
@@ -312,6 +313,7 @@ class AppleTVController(
 
     private suspend fun connectDevice(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        textFocusGate.clear()
         if (currentDevice?.credentialKey != deviceId) autoReconnectJob?.cancel()
         if (device.isRoku) {
             connectRoku(device)
@@ -325,6 +327,7 @@ class AppleTVController(
         ap2?.onDisconnect = null
         runCatching { ap2?.close() }
         ap2 = null
+        roku?.close()
         roku = null
         val credentials = store.loadCompanion(device.credentialKey)
             ?: throw IllegalStateException("Not paired with ${device.name}")
@@ -339,13 +342,16 @@ class AppleTVController(
 
         publishConnection(ConnectionState.Connecting(device))
         val r = AppleTvRemote(device.address, device.port, credentials, scope, deviceName)
+        val textFocusSession = textFocusGate.start()
         try {
             r.onCapabilities = { caps ->
                 lastCapabilities = caps
                 listener?.onCapabilitiesChanged(caps)
             }
             r.onTextFocus = { session ->
-                listener?.onTextInputRequested(session?.textBeforeCursor, session != null)
+                textFocusGate.emit(textFocusSession) {
+                    listener?.onTextInputRequested(session?.textBeforeCursor, session != null)
+                }
             }
             r.onDisconnect = { error ->
                 if (remote === r) handleDisconnect(device, error)
@@ -359,6 +365,7 @@ class AppleTVController(
             publishConnection(ConnectionState.Connected(device, store.isAirPlayPaired(device.credentialKey)))
             startNowPlaying(device)
         } catch (e: Exception) {
+            textFocusGate.clear(textFocusSession)
             r.onDisconnect = null
             runCatching { r.close() }
             if (e is CancellationException) throw e
@@ -379,6 +386,7 @@ class AppleTVController(
         runCatching { remote?.close() }
         runCatching { ap2?.close() }
         remote = null
+        roku?.close()
         roku = null
         ap2 = null
         currentDevice = null
@@ -405,6 +413,9 @@ class AppleTVController(
     }
 
     private suspend fun connectRoku(device: AppleTvDevice) {
+        nowPlayingJob?.cancel()
+        roku?.close()
+        roku = null
         publishConnection(ConnectionState.Connecting(device))
         try {
             val candidate = RokuRemote(device)
@@ -425,7 +436,7 @@ class AppleTVController(
             lastCapabilities = MediaCapabilities(play = true, pause = true, volume = true)
             listener?.onCapabilitiesChanged(lastCapabilities!!)
             listener?.onPlaybackChanged(null)
-            publishConnection(ConnectionState.Connected(verified, true))
+            publishConnection(ConnectionState.Connected(verified, true, candidate.sessionId))
             nowPlayingJob = scope.launch {
                 var failures = 0
                 while (isActive && roku === candidate) {
@@ -455,6 +466,7 @@ class AppleTVController(
 
     private fun handleDisconnect(device: AppleTvDevice, error: Throwable?) {
         if (currentDevice?.credentialKey != device.credentialKey) return
+        textFocusGate.clear()
         remote = null
         if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
             ap2?.onDisconnect = null
@@ -488,6 +500,7 @@ class AppleTVController(
     suspend fun disconnect() {
         autoReconnectJob?.cancel()
         connectionGate.withLock {
+            textFocusGate.clear()
             nowPlayingJob?.cancel()
             currentDevice = null
             remote?.onDisconnect = null
@@ -495,6 +508,7 @@ class AppleTVController(
             runCatching { remote?.close() }
             runCatching { ap2?.close() }
             remote = null
+            roku?.close()
             roku = null
             ap2 = null
             currentDevice = null
@@ -820,6 +834,14 @@ class AppleTVController(
         command { sendText(text, clearPrevious) }
     }
 
+    suspend fun sendRokuEdit(sessionId: String, backspaces: Int, text: String) {
+        buttonGate.withLock {
+            val r = requireRokuSession(roku, sessionId)
+            repeat(backspaces) { r.press("BACKSPACE") }
+            if (text.isNotEmpty()) r.sendText(text)
+        }
+    }
+
     suspend fun loadApps() {
         val device = currentDevice ?: throw IllegalStateException("Not connected")
         val currentRoku = roku
@@ -909,6 +931,7 @@ class AppleTVController(
     // -------------------------------------------------------------- lifecycle
 
     fun shutdown() {
+        textFocusGate.clear()
         discoveryJob?.cancel()
         autoReconnectJob?.cancel()
         nowPlayingJob?.cancel()

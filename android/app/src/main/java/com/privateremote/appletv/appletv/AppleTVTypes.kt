@@ -9,7 +9,7 @@ import dev.atvremote.protocol.mrp.NowPlaying
 sealed class ConnectionState {
     data object Disconnected : ConnectionState()
     data class Connecting(val device: AppleTvDevice) : ConnectionState()
-    data class Connected(val device: AppleTvDevice, val airplayPaired: Boolean) : ConnectionState()
+    data class Connected(val device: AppleTvDevice, val airplayPaired: Boolean, val rokuSession: String? = null) : ConnectionState()
     data class Failed(
         val device: AppleTvDevice?,
         val reason: String,

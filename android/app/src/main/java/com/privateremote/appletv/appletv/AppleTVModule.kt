@@ -164,6 +164,10 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
     override fun sendText(text: String, clearPrevious: Boolean, promise: Promise) = launchPromise(promise) {
         requireController().sendText(text, clearPrevious)
     }
+    override fun sendRokuEdit(sessionId: String, backspaces: Double, text: String, promise: Promise) = launchPromise(promise) {
+        require(backspaces >= 0 && backspaces <= Int.MAX_VALUE && backspaces % 1.0 == 0.0)
+        requireController().sendRokuEdit(sessionId, backspaces.toInt(), text)
+    }
     override fun loadApps(promise: Promise) = launchPromise(promise) { requireController().loadApps() }
     override fun launchApp(bundleId: String, promise: Promise) = launchPromise(promise) {
         requireController().launchApp(bundleId)

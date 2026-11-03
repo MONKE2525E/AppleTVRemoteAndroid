@@ -204,7 +204,7 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
-          {!isRoku && <TextEntryPrompt />}
+          <TextEntryPrompt key={connection.rokuSession ?? connection.device.id} roku={isRoku} rokuSessionId={connection.rokuSession ?? undefined} />
           <Animated.View
             pointerEvents={drawerOpen ? 'none' : 'auto'}
             importantForAccessibility={drawerOpen ? 'no-hide-descendants' : 'auto'}

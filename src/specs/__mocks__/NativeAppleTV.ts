@@ -23,6 +23,7 @@ export default {
   touchMove: jest.fn(),
   touchEnd: jest.fn(),
   sendText: jest.fn(async () => {}),
+  sendRokuEdit: jest.fn(async () => {}),
   loadApps: jest.fn(async () => {}),
   launchApp: jest.fn(async () => {}),
   getDiagnosticsSnapshot: jest.fn(async () => ({})),

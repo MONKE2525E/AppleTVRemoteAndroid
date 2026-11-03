@@ -51,6 +51,7 @@ export interface Spec extends TurboModule {
 
   // --- text input / apps ---
   sendText(text: string, clearPrevious: boolean): Promise<void>;
+  sendRokuEdit(sessionId: string, backspaces: CodegenTypes.Double, text: string): Promise<void>;
   loadApps(): Promise<void>;
   launchApp(bundleId: string): Promise<void>;
 
