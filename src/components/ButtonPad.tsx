@@ -4,6 +4,7 @@ import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
 import { CircleIconButton } from './CircleIconButton';
 import { SkipIcon } from './icons/Icons';
+import { glassButton } from './glassButton';
 import { PressableScale } from './PressableScale';
 
 export const MIN_TOUCH_TARGET = 48;
@@ -108,6 +109,9 @@ const styles = StyleSheet.create({
   arrow: { position: 'absolute' },
   // Pinned like the arrows: flex-centering could lay it out against a stale,
   // smaller ring while the pad resizes under the device list animation.
-  select: { position: 'absolute', backgroundColor: COLORS.controlFill },
+  select: {
+    position: 'absolute',
+    ...glassButton,
+  },
   skipRow: { flexDirection: 'row', alignItems: 'center' },
 });

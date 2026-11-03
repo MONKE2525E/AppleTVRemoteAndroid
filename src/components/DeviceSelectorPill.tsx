@@ -3,6 +3,7 @@ import Animated, { interpolate, useAnimatedStyle, type SharedValue } from 'react
 import { COLORS } from '../animations/constants';
 import { GEOMETRY } from '../adaptive/geometry';
 import { ChevronIcon, TVIcon } from './icons/Icons';
+import { glassButton } from './glassButton';
 import { PressableScale } from './PressableScale';
 
 interface DeviceSelectorPillProps {
@@ -51,7 +52,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.pillFill,
+    ...glassButton,
   },
   label: {
     color: COLORS.icon,

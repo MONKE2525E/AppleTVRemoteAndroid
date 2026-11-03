@@ -92,7 +92,8 @@ android {
     testOptions { unitTests.all { useJUnitPlatform() } }
     namespace "com.privateremote.appletv"
     defaultConfig {
-        applicationId "com.privateremote.appletv"
+        // Opt-in side-by-side install: ./gradlew :app:assembleRelease -PappIdSuffix=.dev
+        applicationId "com.privateremote.appletv" + (project.findProperty("appIdSuffix") ?: "")
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersion.getProperty('VERSION_CODE').toInteger()

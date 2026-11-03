@@ -3,6 +3,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { COLORS } from '../animations/constants';
 import { PressableScale } from '../components/PressableScale';
 import { TVIcon } from '../components/icons/Icons';
+import { isAirPlayTarget, isControllable } from '../appletv/deviceKinds';
+import { glassButton } from '../components/glassButton';
+import { OtherDevices } from '../components/OtherDevices';
 import { requestDiscoveryPermission } from '../appletv/permissions';
 import { openSettings } from '../settings/SettingsScreen';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -37,10 +40,8 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
     setBrowseInstead(false);
   }, [connection.state, failedDeviceId]);
 
-  const appleTvs = useMemo(
-    () => devices.filter(d => !d.model || d.model.startsWith('AppleTV') || !d.model.startsWith('AudioAccessory')),
-    [devices],
-  );
+  const appleTvs = useMemo(() => devices.filter(isControllable), [devices]);
+  const otherDevices = useMemo(() => devices.filter(d => !isControllable(d)), [devices]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +246,15 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
                 await commands.connect(device.id);
                 return;
               }
+              if (isAirPlayTarget(device)) {
+                // HomePods usually accept a PIN-less (transient) AirPlay connection; fall back to PIN pairing.
+                try {
+                  await commands.connect(device.id);
+                  return;
+                } catch {
+                  // Fall through to PIN pairing below.
+                }
+              }
               await commands.startPairing(device.id);
               setStage({ kind: 'pin', device, submitting: false, error: null, pairingReady: true });
             } catch (e) {
@@ -263,6 +273,7 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
           </View>
         </Pressable>
       ))}
+      <OtherDevices devices={otherDevices} />
     </View>
   );
 }
@@ -309,7 +320,7 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: COLORS.controlFill,
     width: '100%',
   },
@@ -341,7 +352,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   secondaryButton: {
-    backgroundColor: COLORS.controlFill,
+    ...glassButton,
     paddingHorizontal: 28,
     paddingVertical: 10,
     borderRadius: 20,

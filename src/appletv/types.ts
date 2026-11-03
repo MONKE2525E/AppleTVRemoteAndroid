@@ -1,5 +1,7 @@
 /** Mirrors android/app/.../appletv/Bridging.kt -- keep both sides in sync by hand. */
 
+export type DeviceKind = 'apple_tv' | 'roku' | 'homepod' | 'airplay' | 'android_tv';
+
 export interface AppleTVDeviceInfo {
   id: string;
   name: string;
@@ -7,6 +9,8 @@ export interface AppleTVDeviceInfo {
   port: number;
   model: string | null;
   identifier: string | null;
+  kind?: DeviceKind;
+  controllable?: boolean;
 }
 
 export type ConnectionState =

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, type AccessibilityRole, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { runOnJS } from 'react-native-worklets';
-import { PRESS_OPACITY, PRESS_SCALE, PRESS_TIMING } from '../animations/constants';
+import { PRESS_OPACITY, PRESS_SCALE, PRESS_SPRING, PRESS_TIMING } from '../animations/constants';
 import { triggerHaptic, type HapticStyle } from '../haptics/haptics';
 
 interface PressableScaleProps {
@@ -11,9 +11,14 @@ interface PressableScaleProps {
   onLongPress?: () => void;
   disabled?: boolean;
   haptic?: HapticStyle | false;
+  /** Springs back past rest on release, for tiles and cards that should feel springy. */
+  bouncy?: boolean;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
   accessibilityLabel?: string;
+  /** Defaults to 'button'; radio tiles pass 'radio' together with `selected`. */
+  accessibilityRole?: AccessibilityRole;
+  selected?: boolean;
 }
 
 /**
@@ -27,9 +32,12 @@ export function PressableScale({
   onLongPress,
   disabled = false,
   haptic = 'light',
+  bouncy = false,
   style,
   children,
   accessibilityLabel,
+  accessibilityRole = 'button',
+  selected,
 }: PressableScaleProps) {
   const pressed = useSharedValue(0);
 
@@ -52,7 +60,7 @@ export function PressableScale({
     })
     .onFinalize(() => {
       'worklet';
-      pressed.value = withTiming(0, PRESS_TIMING);
+      pressed.value = bouncy ? withSpring(0, PRESS_SPRING) : withTiming(0, PRESS_TIMING);
     })
     .onStart(() => {
       'worklet';
@@ -79,9 +87,9 @@ export function PressableScale({
     <GestureDetector gesture={composed}>
       <Animated.View
         accessible
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={{ disabled }}
+        accessibilityState={selected === undefined ? { disabled } : { disabled, selected }}
         accessibilityActions={[{ name: 'activate' }]}
         onAccessibilityAction={event => {
           if (event.nativeEvent.actionName === 'activate') activateFromAccessibility();

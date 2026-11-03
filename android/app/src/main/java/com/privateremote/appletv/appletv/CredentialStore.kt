@@ -70,6 +70,9 @@ class CredentialStore(context: Context) {
             .putInt(LAST_PORT, device.port)
             .putString(LAST_MODEL, device.model)
             .putString(LAST_IDENTIFIER, device.identifier)
+            .putString(LAST_KIND, device.kind.wireValue)
+            .putString(LAST_OUTPUT_UID, device.outputUid)
+            .putInt(LAST_AIRPLAY_PORT, device.airplayPort)
             .apply()
     }
 
@@ -84,6 +87,10 @@ class CredentialStore(context: Context) {
             port = port,
             model = prefs.getString(LAST_MODEL, null),
             identifier = prefs.getString(LAST_IDENTIFIER, null),
+            kind = dev.atvremote.protocol.discovery.DeviceKind.entries.firstOrNull { it.wireValue == prefs.getString(LAST_KIND, null) }
+                ?: dev.atvremote.protocol.discovery.classifyDevice(prefs.getString(LAST_MODEL, null), prefs.getString(LAST_IDENTIFIER, null)),
+            outputUid = prefs.getString(LAST_OUTPUT_UID, null),
+            airplayPort = prefs.getInt(LAST_AIRPLAY_PORT, 7000),
         )
     }
 
@@ -91,6 +98,7 @@ class CredentialStore(context: Context) {
         prefs.edit()
             .remove(LAST_ID).remove(LAST_NAME).remove(LAST_ADDRESS)
             .remove(LAST_PORT).remove(LAST_MODEL).remove(LAST_IDENTIFIER)
+            .remove(LAST_KIND).remove(LAST_OUTPUT_UID).remove(LAST_AIRPLAY_PORT)
             .apply()
     }
 
@@ -98,6 +106,9 @@ class CredentialStore(context: Context) {
     private fun airplayKey(deviceKey: String) = "airplay:$deviceKey"
 
     private companion object {
+        const val LAST_KIND = "last_device_kind"
+        const val LAST_OUTPUT_UID = "last_output_uid"
+        const val LAST_AIRPLAY_PORT = "last_airplay_port"
         const val LAST_ID = "last_device_id"
         const val LAST_NAME = "last_device_name"
         const val LAST_ADDRESS = "last_device_address"

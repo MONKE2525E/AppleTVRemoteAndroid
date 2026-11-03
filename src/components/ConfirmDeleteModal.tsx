@@ -16,7 +16,7 @@ export function ConfirmDeleteModal({ device, onCancel, onConfirm }: ConfirmDelet
         <View style={styles.card}>
           <Text style={styles.title}>Remove “{device?.name}”?</Text>
           <Text style={styles.body}>
-            This Apple TV will be unpaired from this phone. You can add it again later.
+            This TV will be unpaired from this phone. You can add it again later.
           </Text>
           <Pressable
             style={styles.destructive}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -123,7 +124,7 @@ export function TextEntryPrompt() {
         onShow={() => inputRef.current?.focus()}
         onRequestClose={() => setOpen(false)}
       >
-        <View style={styles.overlay}>
+        <GestureHandlerRootView style={styles.overlay}>
           <View style={styles.dialog}>
             <View style={styles.header}>
               <KeyboardIcon size={18} color={COLORS.iconSecondary} />
@@ -154,7 +155,7 @@ export function TextEntryPrompt() {
               <Text style={styles.doneText}>Done</Text>
             </PressableScale>
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );

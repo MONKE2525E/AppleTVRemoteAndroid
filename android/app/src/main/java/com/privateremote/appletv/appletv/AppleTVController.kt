@@ -13,10 +13,13 @@ import dev.atvremote.protocol.companion.CompanionClient
 import dev.atvremote.protocol.companion.ProtocolException
 import dev.atvremote.protocol.companion.TouchPhase
 import dev.atvremote.protocol.discovery.AppleTvDevice
+import dev.atvremote.protocol.discovery.DeviceKind
 import dev.atvremote.protocol.hap.HapException
 import dev.atvremote.protocol.companion.MediaCapabilities
 import dev.atvremote.protocol.mrp.NowPlaying
 import dev.atvremote.protocol.mrp.PlaybackState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -55,6 +58,9 @@ class AppleTVController(
     @Volatile private var roku: RokuRemote? = null
     private val store = CredentialStore(appContext)
     private val deviceName = "Android Remote"
+    private val artworkLookup = ArtworkLookup(appContext)
+    private var artworkJob: Job? = null
+    private var artworkKey: Triple<String, String, String>? = null
 
     var listener: AppleTVListener? = null
 
@@ -149,6 +155,10 @@ class AppleTVController(
     suspend fun startPairing(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
         if (device.isRoku) { connect(deviceId); return }
+        if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
+            startAirPlayPairing(deviceId); return
+        }
+        if (!device.controllable) throw TargetUnsupportedException()
         Log.i(TAG, "startPairing ${device.name} ${device.address}:${device.port} id=$deviceId")
         stopDiscovery()
         closePairing()
@@ -167,6 +177,7 @@ class AppleTVController(
     }
 
     suspend fun submitPin(deviceId: String, pin: String): Boolean {
+        if (airplayPairingDevice?.credentialKey == deviceId) return submitAirPlayPin(deviceId, pin)
         val session = pairingSession ?: throw IllegalStateException("No pairing in progress")
         val device = pairingDevice ?: throw IllegalStateException("No pairing in progress")
         val credentials = try {
@@ -206,8 +217,9 @@ class AppleTVController(
 
     suspend fun startAirPlayPairing(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        if (!device.controllable) throw TargetUnsupportedException()
         closeAirPlayPairing()
-        val connection = AirPlayConnection(device.address, AIRPLAY_PORT)
+        val connection = AirPlayConnection(device.address, device.airplayPort)
         airplayConnection = connection
         try {
             connection.connect()
@@ -230,8 +242,12 @@ class AppleTVController(
         }
         store.saveAirPlay(device.credentialKey, credentials)
         closeAirPlayPairing()
-        startNowPlaying(device)
-        publishConnection(ConnectionState.Connected(device, true))
+        if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
+            connect(device.credentialKey)
+        } else {
+            startNowPlaying(device)
+            publishConnection(ConnectionState.Connected(device, true))
+        }
         return true
     }
 
@@ -257,8 +273,19 @@ class AppleTVController(
             ?: store.loadLastDevice()?.takeIf { it.credentialKey == deviceId }
                 ?.also { devicesById[deviceId] = it }
 
+    suspend fun transferPlayback(targetDeviceId: String) {
+        val target = deviceFor(targetDeviceId) ?: throw UnknownTargetException()
+        val uid = target.outputUid ?: throw TransferFailure("TARGET_UID_UNAVAILABLE", "The target did not advertise an output device ID")
+        val session = ap2 ?: throw TransferFailure("MRP_NOT_CONNECTED", "Connect playback details before routing audio")
+        try { session.setOutputDevice(uid) }
+        catch (e: TimeoutCancellationException) { throw TransferFailure("ROUTING_TIMEOUT", "The device did not confirm the requested output") }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { throw TransferFailure("ROUTING_FAILED", e.message ?: "Could not request playback output") }
+    }
+
     suspend fun connect(deviceId: String) = connectionGate.withLock {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
+        if (!device.controllable) throw TargetUnsupportedException()
         try {
             retryConnection(beforeRetry = {
                 // Saved Companion ports and addresses can change while the app is closed.
@@ -275,7 +302,7 @@ class AppleTVController(
             }
         } catch (e: Exception) {
             if (e is CancellationException && e !is TimeoutCancellationException) throw e
-            val stale = e is HapException || (!device.isRoku && store.loadCompanion(deviceId) == null)
+            val stale = e is HapException || (device.kind == DeviceKind.APPLE_TV && store.loadCompanion(deviceId) == null)
             publishConnection(ConnectionState.Failed(
                 deviceFor(deviceId) ?: device, e.message ?: "connect failed", stale, !stale,
             ))
@@ -288,6 +315,10 @@ class AppleTVController(
         if (currentDevice?.credentialKey != deviceId) autoReconnectJob?.cancel()
         if (device.isRoku) {
             connectRoku(device)
+            return
+        }
+        if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
+            connectAirPlay(device)
             return
         }
         nowPlayingJob?.cancel()
@@ -337,6 +368,38 @@ class AppleTVController(
             // the next attempt pairs fresh instead of failing forever.
             val stale = e is HapException
             if (stale) store.forgetDevice(device.credentialKey)
+            throw e
+        }
+    }
+
+    private suspend fun connectAirPlay(device: AppleTvDevice) {
+        nowPlayingJob?.cancel()
+        remote?.onDisconnect = null
+        ap2?.onDisconnect = null
+        runCatching { remote?.close() }
+        runCatching { ap2?.close() }
+        remote = null
+        roku = null
+        ap2 = null
+        currentDevice = null
+        lastNowPlaying = null
+        listener?.onPlaybackChanged(null)
+        publishConnection(ConnectionState.Connecting(device))
+        val session = Ap2Session(device.address, store.loadAirPlay(device.credentialKey), scope, deviceName, device.airplayPort)
+        session.onNowPlaying = { if (ap2 === session) publishMrpPlayback(session, it) }
+        session.onDisconnect = { error -> if (ap2 === session) handleDisconnect(device, error) }
+        ap2 = session
+        try {
+            withTimeout(15_000) { session.connect() }
+            currentDevice = device
+            store.saveLastDevice(device)
+            lastCapabilities = MediaCapabilities(play = true, pause = true, nextTrack = true, previousTrack = true, volume = true)
+            listener?.onCapabilitiesChanged(lastCapabilities!!)
+            publishConnection(ConnectionState.Connected(device, true))
+        } catch (e: Exception) {
+            session.onDisconnect = null
+            session.close()
+            if (ap2 === session) ap2 = null
             throw e
         }
     }
@@ -393,6 +456,11 @@ class AppleTVController(
     private fun handleDisconnect(device: AppleTvDevice, error: Throwable?) {
         if (currentDevice?.credentialKey != device.credentialKey) return
         remote = null
+        if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
+            ap2?.onDisconnect = null
+            runCatching { ap2?.close() }
+            ap2 = null
+        }
         publishConnection(ConnectionState.Connecting(device))
         Log.w(TAG, "companion dropped (${error?.message ?: "no cause"}); retrying")
         autoReconnectJob?.cancel()
@@ -470,7 +538,7 @@ class AppleTVController(
     }
 
     /** Current session for a freshly bound JS runtime (Metro reload / process restart). */
-    fun isConnected(): Boolean = remote != null || roku != null
+    fun isConnected(): Boolean = remote != null || roku != null || (ap2 != null && currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
     fun snapshotPlayback(): NowPlaying? = lastNowPlaying
     fun snapshotCapabilities(): MediaCapabilities? = lastCapabilities
 
@@ -492,12 +560,11 @@ class AppleTVController(
             var attempt = 0
             while (isActive && currentDevice?.credentialKey == device.credentialKey) {
                 val closed = CompletableDeferred<Unit>()
-                val session = Ap2Session(device.address, credentials, scope, deviceName)
+                val session = Ap2Session(device.address, credentials, scope, deviceName, device.airplayPort)
                 ap2 = session
                 session.onNowPlaying = { np ->
                     if (ap2 === session) {
-                        lastNowPlaying = np
-                        listener?.onPlaybackChanged(np)
+                        publishMrpPlayback(session, np)
                     }
                 }
                 session.onDisconnect = { closed.complete(Unit) }
@@ -527,6 +594,33 @@ class AppleTVController(
                 }
                 delay((1000L * (1L shl attempt.coerceAtMost(4))).coerceAtMost(15_000))
                 attempt++
+            }
+        }
+    }
+
+    private fun publishMrpPlayback(session: Ap2Session, playback: NowPlaying) {
+        val key = Triple(playback.title.orEmpty(), playback.artist.orEmpty(), playback.appName.orEmpty())
+        if (artworkKey != key || playback.artwork != null) {
+            artworkJob?.cancel()
+            artworkJob = null
+            artworkKey = key
+        }
+        val previous = lastNowPlaying
+        val resolved = if (playback.artwork == null && previous != null &&
+            Triple(previous.title.orEmpty(), previous.artist.orEmpty(), previous.appName.orEmpty()) == key) {
+            playback.copy(artwork = previous.artwork)
+        } else playback
+        lastNowPlaying = resolved
+        listener?.onPlaybackChanged(resolved)
+        if (resolved.artwork == null && key.first.isNotBlank() && key.second.isNotBlank() && artworkJob == null) {
+            artworkJob = scope.launch {
+                val bytes = withContext(Dispatchers.IO) { artworkLookup.find(key.first, key.second, key.third) }
+                val current = lastNowPlaying
+                if (bytes != null && ap2 === session && artworkKey == key && current != null && current.artwork == null) {
+                    val updated = current.copy(artwork = bytes)
+                    lastNowPlaying = updated
+                    listener?.onPlaybackChanged(updated)
+                }
             }
         }
     }
@@ -587,6 +681,12 @@ class AppleTVController(
             return
         }
         volumeGate.withLock {
+            if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY)) {
+                val session = ap2 ?: throw IllegalStateException("AirPlay session is not connected")
+                if (muted) { volumeBeforeMute = session.volume ?: volumeBeforeMute; session.setVolume(0.0) }
+                else { session.setVolume(volumeBeforeMute ?: 0.5); volumeBeforeMute = null }
+                return@withLock
+            }
             command {
                 if (muted) {
                     volumeBeforeMute = getVolume() ?: volumeBeforeMute
@@ -601,7 +701,11 @@ class AppleTVController(
 
     suspend fun setVolume(level: Double) {
         if (roku != null) throw UnsupportedOperationException("Use the volume buttons on Roku")
-        volumeGate.withLock { command { setVolume(level) } }
+        volumeGate.withLock {
+            if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
+                (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).setVolume(level)
+            else command { setVolume(level) }
+        }
     }
 
     private fun buttonFromName(name: String): Button = when (name.uppercase()) {
@@ -629,6 +733,17 @@ class AppleTVController(
 
     suspend fun pressButton(name: String) {
         roku?.let { r -> buttonGate.withLock { r.press(name) }; return }
+        if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY)) {
+            when (name.uppercase()) {
+                "VOLUME_UP" -> nudgeVolume(true)
+                "VOLUME_DOWN" -> nudgeVolume(false)
+                "PLAY_PAUSE" -> playPause()
+                "FAST_FORWARD", "NEXT", "NEXT_TRACK" -> ap2?.sendCommand(5) ?: throw IllegalStateException("AirPlay session is not connected")
+                "REWIND", "PREVIOUS", "PREVIOUS_TRACK" -> ap2?.sendCommand(6) ?: throw IllegalStateException("AirPlay session is not connected")
+                else -> throw UnsupportedOperationException("Button is not supported for AirPlay receivers")
+            }
+            return
+        }
         when (name.uppercase()) {
             "VOLUME_UP" -> nudgeVolume(up = true)
             "VOLUME_DOWN" -> nudgeVolume(up = false)
@@ -641,6 +756,10 @@ class AppleTVController(
         volumeGate.withLock {
             val r = roku
             if (r != null) r.press(if (up) "VOLUME_UP" else "VOLUME_DOWN")
+            else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY)) {
+                val session = ap2 ?: throw IllegalStateException("AirPlay session is not connected")
+                session.volumeStep(up)
+            }
             else command { press(if (up) Button.VOLUME_UP else Button.VOLUME_DOWN) }
         }
     }
@@ -655,7 +774,10 @@ class AppleTVController(
         buttonGate.withLock {
             val before = lastNowPlaying
             val r = roku
-            if (r != null) r.press("PLAY_PAUSE") else command { playPause() }
+            if (r != null) r.press("PLAY_PAUSE")
+            else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
+                (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).sendCommand(3)
+            else command { playPause() }
             // A device push received during the command takes precedence.
             if (before != null && lastNowPlaying === before &&
                 before.playbackState in listOf(PlaybackState.PLAYING, PlaybackState.PAUSED)) {
@@ -673,7 +795,9 @@ class AppleTVController(
             if (r != null) {
                 val state = r.playback().playbackState
                 if (state == PlaybackState.PLAYING && !playing || state == PlaybackState.PAUSED && playing) r.press("PLAY_PAUSE")
-            } else command { if (playing) play() else pause() }
+            } else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
+                (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).sendCommand(if (playing) 1 else 2)
+            else command { if (playing) play() else pause() }
         }
     }
 
@@ -807,3 +931,10 @@ class AppleTVController(
         const val HOLD_THROTTLE_NANOS = 12_000_000L
     }
 }
+
+class TargetUnsupportedException : UnsupportedOperationException("This target is discoverable but control is not supported")
+class TransferUnsupportedException : UnsupportedOperationException("Playback output routing is not supported by this protocol implementation")
+
+class UnknownTargetException : IllegalArgumentException("Unknown playback target")
+
+class TransferFailure(val code: String, message: String) : Exception(message)

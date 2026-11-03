@@ -1,5 +1,6 @@
 import NativeAppSettings from '../specs/NativeAppSettings';
 import type { AppleTVDeviceInfo } from './types';
+import { readJson, writeJson } from './persist';
 
 export const isRokuDevice = (device: AppleTVDeviceInfo) => device.model?.startsWith('Roku ') === true;
 
@@ -40,8 +41,57 @@ async function lookup(bundleIds: string[], country: string, entity?: string): Pr
   return found;
 }
 
-/** Resolves App Store artwork for Apple TV bundle ids, cached for the session. Never rejects. */
+// Lookups also persist across launches. Found art rarely changes, so it lives
+// a month; "not in any store" answers expire sooner in case an app is added.
+const STORE_KEY = 'iconArtwork.v1';
+const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MISS_TTL_MS = 12 * 60 * 60 * 1000;
+type StoredEntry = { u: string | null; t: number };
+const persisted = new Map<string, StoredEntry>();
+let hydrated: Promise<void> | undefined;
+/** Bumped by clearArtworkCache so a lookup or hydration already in flight cannot repopulate the cleared cache. */
+let epoch = 0;
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+
+const isExpired = (entry: StoredEntry, now: number) =>
+  typeof entry.t !== 'number' || now - entry.t > (entry.u ? HIT_TTL_MS : MISS_TTL_MS);
+
+function hydrate(): Promise<void> {
+  const startedAt = epoch;
+  hydrated ??= readJson<Record<string, StoredEntry>>(STORE_KEY).then(stored => {
+    if (epoch !== startedAt) return;
+    const now = Date.now();
+    for (const [id, entry] of Object.entries(stored ?? {})) {
+      if (isExpired(entry, now)) continue;
+      persisted.set(id, entry);
+      if (!artworkCache.has(id)) artworkCache.set(id, entry.u);
+    }
+  });
+  return hydrated;
+}
+
+function remember(id: string, uri: string | null) {
+  artworkCache.set(id, uri);
+  persisted.set(id, { u: uri, t: Date.now() });
+  persistTimer ??= setTimeout(() => {
+    persistTimer = undefined;
+    writeJson(STORE_KEY, Object.fromEntries(persisted));
+  }, 500);
+}
+
+/** Resolves App Store artwork for Apple TV bundle ids, cached in memory and on disk. Never rejects. */
 export async function lookupAppleArtwork(bundleIds: string[]): Promise<Record<string, string>> {
+  const startedAt = epoch;
+  await hydrate();
+  // Entries loaded earlier in this process age out too, not only the ones read from disk.
+  const now = Date.now();
+  for (const id of bundleIds) {
+    const entry = persisted.get(id);
+    if (entry && isExpired(entry, now)) {
+      persisted.delete(id);
+      artworkCache.delete(id);
+    }
+  }
   const pending = bundleIds.filter(id => !id.startsWith('com.apple.') && !artworkCache.has(id));
   if (pending.length > 0) {
     const found = new Map<string, string>();
@@ -56,8 +106,16 @@ export async function lookupAppleArtwork(bundleIds: string[]): Promise<Record<st
         }
       }
     }
-    found.forEach((uri, id) => artworkCache.set(id, uri));
-    if (!lookupFailed) pending.forEach(id => artworkCache.set(id, found.get(id) ?? null));
+    if (epoch === startedAt) {
+      found.forEach((uri, id) => remember(id, uri));
+      if (!lookupFailed) pending.forEach(id => { if (!found.has(id)) remember(id, null); });
+    }
+    const resolved: Record<string, string> = {};
+    for (const id of bundleIds) {
+      const uri = found.get(id) ?? artworkCache.get(id);
+      if (uri) resolved[id] = uri;
+    }
+    return resolved;
   }
   const resolved: Record<string, string> = {};
   for (const id of bundleIds) {
@@ -65,4 +123,15 @@ export async function lookupAppleArtwork(bundleIds: string[]): Promise<Record<st
     if (uri) resolved[id] = uri;
   }
   return resolved;
+}
+
+/** Forgets every stored artwork lookup, in memory and on disk, so the next drawer open resolves them again. */
+export function clearArtworkCache(): void {
+  epoch += 1;
+  artworkCache.clear();
+  persisted.clear();
+  hydrated = Promise.resolve();
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = undefined;
+  writeJson(STORE_KEY, {});
 }

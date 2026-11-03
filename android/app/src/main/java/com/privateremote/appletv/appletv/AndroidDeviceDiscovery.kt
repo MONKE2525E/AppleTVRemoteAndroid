@@ -9,6 +9,8 @@ import android.util.Log
 import dev.atvremote.protocol.discovery.AppleTvDevice
 import dev.atvremote.protocol.discovery.COMPANION_SERVICE_TYPE
 import dev.atvremote.protocol.discovery.DeviceDiscovery
+import dev.atvremote.protocol.discovery.deviceFromService
+import dev.atvremote.protocol.discovery.DeviceKind
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -53,7 +55,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 acquire()
             }
 
-            val listener = object : NsdManager.DiscoveryListener {
+            fun listener() = object : NsdManager.DiscoveryListener {
                 override fun onDiscoveryStarted(serviceType: String) {
                     Log.i(TAG, "NSD started for $serviceType")
                 }
@@ -61,7 +63,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                     Log.i(TAG, "NSD found ${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
                     // IPv4 and IPv6 can report the same service name.
                     synchronized(seen) {
-                        if (seen.add(serviceInfo.serviceName)) found.trySend(serviceInfo)
+                        if (seen.add("${serviceInfo.serviceType}:${serviceInfo.serviceName}")) found.trySend(serviceInfo)
                     }
                 }
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
@@ -80,9 +82,8 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                         withTimeoutOrNull(3000) {
                             if (Build.VERSION.SDK_INT >= 34) resolveUpdated(info) else resolve(info)
                         }?.also { device ->
-                            devices[device.credentialKey] = device
+                            devices["${info.serviceType}:${device.credentialKey}"] = device
                             Log.i(TAG, "NSD resolved ${device.name} ${device.address}:${device.port}")
-                            onResolved(device)
                         }
                     } catch (e: CancellationException) {
                         throw e
@@ -92,18 +93,38 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 }
             }
 
+            val listeners = mutableListOf<NsdManager.DiscoveryListener>()
             try {
-                nsd.discoverServices(COMPANION_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+                listOf(COMPANION_SERVICE_TYPE, "_airplay._tcp", "_googlecast._tcp").forEach { type ->
+                    val discoveryListener = listener()
+                    try {
+                        nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                        listeners.add(discoveryListener)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "NSD start failed type=$type", e)
+                    }
+                }
                 delay(timeoutMs)
                 found.close()
                 resolver.join()
             } finally {
                 found.close()
                 resolver.cancel()
-                runCatching { nsd.stopServiceDiscovery(listener) }
+                listeners.forEach { runCatching { nsd.stopServiceDiscovery(it) } }
                 runCatching { if (multicast.isHeld) multicast.release() }
             }
-            devices.values.toList()
+            val companion = devices.filterKeys { it.contains(COMPANION_SERVICE_TYPE, ignoreCase = true) }.values.toList()
+            val airplay = devices.filterKeys { it.contains("_airplay._tcp", ignoreCase = true) }.values.toList()
+            val merged = companion.map { device ->
+                val receiver = airplay.firstOrNull { it.address == device.address }
+                if (receiver == null) device else device.copy(
+                    outputUid = receiver.outputUid, airplayPort = receiver.airplayPort,
+                    kind = if (receiver.kind == DeviceKind.HOMEPOD) DeviceKind.HOMEPOD else device.kind,
+                )
+            }
+            val companionHosts = companion.map { it.address }.toSet()
+            val cast = devices.filterKeys { it.contains("_googlecast._tcp", ignoreCase = true) }.values
+            (merged + airplay.filter { it.address !in companionHosts } + cast).also { it.forEach(onResolved) }
         } } }
 
     @androidx.annotation.RequiresApi(34)
@@ -112,13 +133,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
         val callback = object : NsdManager.ServiceInfoCallback {
             override fun onServiceUpdated(serviceInfo: NsdServiceInfo) {
                 val host = hostAddress(serviceInfo) ?: return
-                if (serviceInfo.port > 0) result.complete(AppleTvDevice(
-                    name = serviceInfo.serviceName,
-                    address = host,
-                    port = serviceInfo.port,
-                    model = serviceInfo.txt("rpMd"),
-                    identifier = serviceInfo.txt("rpMRtID"),
-                ))
+                if (serviceInfo.port > 0) result.complete(parseService(serviceInfo, host))
             }
             override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {
                 Log.w(TAG, "NSD service-info registration failed code=$errorCode")
@@ -147,13 +162,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                     if (!cont.isActive) return
                     val host = hostAddress(serviceInfo)
                     cont.resume(
-                        if (host == null) null else AppleTvDevice(
-                            name = serviceInfo.serviceName,
-                            address = host,
-                            port = serviceInfo.port,
-                            model = serviceInfo.txt("rpMd"),
-                            identifier = serviceInfo.txt("rpMRtID"),
-                        ),
+                        if (host == null) null else parseService(serviceInfo, host),
                     )
                 }
             }
@@ -175,8 +184,9 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
         return info.host?.hostAddress
     }
 
-    private fun NsdServiceInfo.txt(key: String): String? =
-        attributes[key]?.toString(Charsets.UTF_8)
+    private fun parseService(info: NsdServiceInfo, host: String): AppleTvDevice =
+        deviceFromService(info.serviceName, host, info.port, info.serviceType,
+            info.attributes.mapValues { it.value.toString(Charsets.UTF_8) })
 
     companion object {
         private const val TAG = "AtvDiscovery"

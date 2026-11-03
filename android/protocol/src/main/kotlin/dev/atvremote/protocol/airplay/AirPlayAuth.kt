@@ -5,6 +5,7 @@ import dev.atvremote.protocol.hap.HapException
 import dev.atvremote.protocol.hap.PairSetupSession
 import dev.atvremote.protocol.hap.PairVerifySession
 import dev.atvremote.protocol.hap.Tlv8
+import dev.atvremote.protocol.hap.SessionKeyDeriver
 
 /**
  * HAP pairing over the AirPlay control connection.
@@ -25,8 +26,9 @@ object AirPlayAuth {
         connection: AirPlayConnection,
         path: String,
         tlv: Map<Int, ByteArray>,
+        headers: Map<String, Any> = HEADERS,
     ): Map<Int, ByteArray> {
-        val response = connection.post(path, Tlv8.write(tlv), HEADERS)
+        val response = connection.post(path, Tlv8.write(tlv), headers)
         if (!response.isSuccess) {
             throw HapException("$path returned ${response.code} ${response.message}")
         }
@@ -58,6 +60,18 @@ object AirPlayAuth {
             val m6 = postTlv(connection, "/pair-setup", session.exchangeRequest(m4))
             return session.finish(m6)
         }
+    }
+
+    suspend fun transient(connection: AirPlayConnection): SessionKeyDeriver {
+        val headers = HEADERS + ("X-Apple-HKP" to 4)
+        val session = PairSetupSession(transient = true)
+        connection.post("/pair-pin-start", null, headers)
+        val m2 = postTlv(connection, "/pair-setup", session.startRequest(), headers)
+        val m4 = postTlv(connection, "/pair-setup", session.proofRequest(m2, "3939"), headers)
+        val keys = session.finishTransient(m4)
+        val (output, input) = keys.encryptionKeys(CONTROL_SALT, CONTROL_WRITE_INFO, CONTROL_READ_INFO)
+        connection.enableEncryption(output, input)
+        return keys
     }
 
     /**

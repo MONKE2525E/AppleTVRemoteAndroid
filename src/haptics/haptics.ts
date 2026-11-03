@@ -1,9 +1,11 @@
 import NativeHaptics from '../specs/NativeHaptics';
+import { isHapticsEnabled } from '../settings/preferences';
 
 export type HapticStyle = 'light' | 'medium' | 'heavy' | 'selection';
 
 /** Fire-and-forget; a missing/broken vibrator must never affect remote control. */
 export function triggerHaptic(style: HapticStyle = 'light'): void {
+  if (!isHapticsEnabled()) return;
   try {
     const result = NativeHaptics.impact(style) as void | Promise<void>;
     // Some TurboModule bridges surface native failures as rejected promises

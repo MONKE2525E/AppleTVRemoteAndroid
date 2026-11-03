@@ -232,3 +232,29 @@ Pause, and checks removal on pause, stop and disconnect. Emulator verification
 covers the system media card. The user confirmed the preceding APK appears in
 Samsung's Now Bar; physical Apple TV and this revision's Samsung rendering still
 require hardware verification.
+
+## AirPlay targets
+
+Discovery includes AirPlay and Google Cast receivers. HomePods and AirPlay
+receivers can attempt an AirPlay 2 MRP connection using transient HAP pairing
+(PIN 3939 for open network access) or stored credentials from the PIN pairing
+flow. The MRP channel provides now-playing metadata and artwork, play/pause,
+next/previous and volume controls when the receiver exposes them. Google Cast
+receivers are display-only. Compatibility of generic AirPlay receivers is not
+known from DNS-SD alone; an AirPlay 1 receiver or a receiver without the MRP
+tunnel cannot use these controls.
+
+`transferPlayback` requests a cluster-aware MRP output-device selection and
+waits for the connected receiver to report the target in its output group. It
+routes audio; it does not transfer a video session. Routing needs an active
+MRP connection and a target advertising an output UID. The PIN flow, receiver
+controls, routing, and Samsung artwork rendering require real hardware testing;
+none has been verified on a HomePod or other physical receiver.
+
+When MRP does not provide artwork, the app may search the iTunes catalog using
+the current title and artist. It accepts only exact title and artist matches
+for music, caches successful images locally, and uses the result in playback
+notifications and `artworkChanged`. This sends those metadata fields to Apple.
+It cannot reliably identify YouTube videos or supply their thumbnails when the
+playing app does not expose them. Artwork requests and Samsung notification
+rendering still require verification on real hardware.
