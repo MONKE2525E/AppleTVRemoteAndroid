@@ -45,20 +45,31 @@ object HapErrors {
 }
 
 /** Drives M1..M6 of pair-setup. One instance per pairing attempt. */
-class PairSetupSession(private val deviceName: String = "Android Remote") {
+class PairSetupSession(private val deviceName: String = "Android Remote", private val transient: Boolean = false, srpOverride: Srp? = null) {
 
     private val signingSeed = Crypto.randomBytes(32)
     private val authPublic = Crypto.ed25519PublicKey(signingSeed)
     val pairingId: ByteArray = UUID.randomUUID().toString().toByteArray(Charsets.UTF_8)
 
-    private val srp = Srp(clientPrivate = signingSeed)
+    private val srp = srpOverride ?: Srp(clientPrivate = signingSeed)
     private lateinit var sessionKey: ByteArray
 
     /** M1: request a PIN-based pairing. */
     fun startRequest(): Map<Int, ByteArray> = linkedMapOf(
         TlvValue.METHOD to byteArrayOf(0x00),
         TlvValue.SEQ_NO to byteArrayOf(0x01),
-    )
+    ) + if (transient) mapOf(TlvValue.FLAGS to byteArrayOf(0x10)) else emptyMap()
+
+    fun finishTransient(m4: Map<Int, ByteArray>): SessionKeyDeriver {
+        HapErrors.check(m4)
+        val proof = m4[TlvValue.PROOF] ?: throw HapException("missing device proof")
+        if (!srp.verifyServerProof(proof)) throw HapException("device proof mismatch")
+        val key = srp.sessionKey.copyOf()
+        return object : SessionKeyDeriver {
+            override fun encryptionKeys(salt: String, outputInfo: String, inputInfo: String) =
+                Crypto.hkdf(salt, outputInfo, key) to Crypto.hkdf(salt, inputInfo, key)
+        }
+    }
 
     /** M3: prove knowledge of the PIN, given the device's M2. */
     fun proofRequest(m2: Map<Int, ByteArray>, pin: String): Map<Int, ByteArray> {
@@ -138,7 +149,11 @@ class PairSetupSession(private val deviceName: String = "Android Remote") {
  * The same verifier is reused after the handshake: AirPlay derives several
  * independent key pairs from one shared secret, one per logical channel.
  */
-class PairVerifySession(private val credentials: Credentials) {
+interface SessionKeyDeriver {
+    fun encryptionKeys(salt: String, outputInfo: String, inputInfo: String): Pair<ByteArray, ByteArray>
+}
+
+class PairVerifySession(private val credentials: Credentials) : SessionKeyDeriver {
 
     private val verifySeed = Crypto.randomBytes(32)
     val publicKey: ByteArray = Crypto.x25519PublicKey(verifySeed)
@@ -207,7 +222,7 @@ class PairVerifySession(private val credentials: Credentials) {
     }
 
     /** Derive a (output, input) key pair for one logical channel. */
-    fun encryptionKeys(
+    override fun encryptionKeys(
         salt: String,
         outputInfo: String,
         inputInfo: String,
