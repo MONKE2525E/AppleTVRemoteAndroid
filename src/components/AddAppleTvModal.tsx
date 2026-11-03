@@ -14,6 +14,8 @@ import { COLORS } from '../animations/constants';
 import { requestDiscoveryPermission } from '../appletv/permissions';
 import { useAppleTV } from '../appletv/useAppleTV';
 import type { AppleTVDeviceInfo } from '../appletv/types';
+import { isAirPlayTarget, isControllable } from '../appletv/deviceKinds';
+import { OtherDevices } from './OtherDevices';
 import { TVIcon } from './icons/Icons';
 import { PressableScale } from './PressableScale';
 
@@ -33,7 +35,8 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
   const [pin, setPin] = useState('');
 
   const pairedIds = useMemo(() => new Set(devices.map(d => d.id)), [devices]);
-  const found = discovered.filter(d => !pairedIds.has(d.id));
+  const found = discovered.filter(d => !pairedIds.has(d.id) && isControllable(d));
+  const otherDevices = discovered.filter(d => !pairedIds.has(d.id) && !isControllable(d));
 
   useEffect(() => {
     if (!visible) {
@@ -81,6 +84,17 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
         commands.stopDiscovery();
         onClose();
         return;
+      }
+      if (isAirPlayTarget(device)) {
+        // HomePods usually accept a PIN-less (transient) AirPlay connection; fall back to PIN pairing.
+        try {
+          await commands.connect(device.id);
+          commands.stopDiscovery();
+          onClose();
+          return;
+        } catch {
+          // Fall through to PIN pairing below.
+        }
       }
       await commands.startPairing(device.id);
       setPin('');
@@ -148,7 +162,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
 
         {stage.kind === 'list' && (
           <View style={styles.body}>
-            <Text style={styles.section}>Apple TVs and Roku TVs on your network</Text>
+            <Text style={styles.section}>TVs and speakers on your network</Text>
             {listError ? <Text style={styles.error}>{listError}</Text> : null}
             {found.length === 0 && (
               <Text style={styles.status}>No new TVs found. Check your Wi-Fi and try again.</Text>
@@ -167,6 +181,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
                 </View>
               </PressableScale>
             ))}
+            <OtherDevices devices={otherDevices} />
           </View>
         )}
 
@@ -293,7 +308,7 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: COLORS.controlFill,
   },
   deviceCopy: {

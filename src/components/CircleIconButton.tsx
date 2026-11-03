@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet } from 'react-native';
-import { COLORS } from '../animations/constants';
+import { glassButton } from './glassButton';
 import { PressableScale } from './PressableScale';
 
 interface CircleIconButtonProps {
@@ -32,9 +32,7 @@ export function CircleIconButton({ size, onPress, onLongPress, disabled, accessi
 
 const styles = StyleSheet.create({
   circle: {
-    backgroundColor: COLORS.controlFill,
-    // No hard border -- Apple's top-row circles are soft frosted discs.
-    borderWidth: 0,
+    ...glassButton,
     alignItems: 'center',
     justifyContent: 'center',
   },

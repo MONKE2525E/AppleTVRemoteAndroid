@@ -19,10 +19,10 @@ jest.mock('react-native-gesture-handler', () => ({
 jest.mock('react-native-reanimated', () => {
   const ReactNative = jest.requireActual('react-native');
   const React = jest.requireActual('react');
-  const entrance = {
-    delay: () => entrance,
-    duration: () => entrance,
-  };
+  const entrance: Record<string, () => unknown> = {};
+  ['delay', 'duration', 'springify', 'damping', 'stiffness', 'mass'].forEach(name => {
+    entrance[name] = () => entrance;
+  });
   return {
     __esModule: true,
     default: {
@@ -34,6 +34,7 @@ jest.mock('react-native-reanimated', () => {
     },
     FadeIn: entrance,
     FadeInDown: entrance,
+    FadeOut: entrance,
     cancelAnimation: jest.fn(),
     interpolate: () => 0,
     useAnimatedStyle: (callback: () => unknown) => callback(),
@@ -75,7 +76,7 @@ test('a failed refresh hides cached apps and offers a retry that restores the gr
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   const drawer = (active: boolean) => safeArea(
     <AppDrawer open active={active} progress={{ value: 1 } as SharedValue<number>}
-      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+      sheetHeight={500} width={360} radius={32} scale={1} device={device} onSettle={jest.fn()} />,
   );
 
   await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(true)); });
@@ -87,8 +88,7 @@ test('a failed refresh hides cached apps and offers a retry that restores the gr
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open Netflix' })).toHaveLength(0);
   expect(JSON.stringify(renderer.toJSON())).toContain("Couldn't load apps from ");
 
-  const retry = renderer.root.findByType(PressableScale);
-  expect(retry.props.accessibilityLabel).toBe('Retry loading apps');
+  const retry = renderer.root.findAllByType(PressableScale).find(node => node.props.accessibilityLabel === 'Retry loading apps')!;
   await ReactTestRenderer.act(() => retry.props.onPress());
   expect(load).toHaveBeenCalledTimes(3);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'Retry loading apps' })).toHaveLength(0);
@@ -96,16 +96,16 @@ test('a failed refresh hides cached apps and offers a retry that restores the gr
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
-test('the closed drawer hides the sheet and scrim from accessibility until it opens', async () => {
+test('the closed drawer hides the sheet from accessibility until it opens', async () => {
   appleTVStore.setApps([{ name: 'Netflix', bundleId: 'netflix' }]);
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   const drawer = (open: boolean) => safeArea(
     <AppDrawer open={open} active={false} progress={{ value: open ? 1 : 0 } as SharedValue<number>}
-      sheetHeight={500} width={360} left={0} scale={1} device={device} onSettle={jest.fn()} />,
+      sheetHeight={500} width={360} radius={32} scale={1} device={device} onSettle={jest.fn()} />,
   );
   await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(drawer(false)); });
   const containers = () => renderer.root.findAll(node => typeof node.type === 'string' && node.props.importantForAccessibility != null);
-  expect(containers()).toHaveLength(2);
+  expect(containers()).toHaveLength(1);
   for (const node of containers()) {
     expect(node.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(node.props.accessibilityElementsHidden).toBe(true);
@@ -138,10 +138,14 @@ test('remote controls and selector controls follow the visible overlay state', a
     expect(node.props.accessibilityElementsHidden).toBe(hidden);
     expect(node.props.importantForAccessibility).toBe(hidden ? 'no-hide-descendants' : 'auto');
   };
+  // Layout never runs under jest; give the pad slot a height so the drawer mounts.
+  await ReactTestRenderer.act(() => {
+    renderer.root.findAll(node => typeof node.props.onLayout === 'function' && node.props.style != null)
+      .forEach(node => node.props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
+  });
   const topBar = () => renderer.root.findByType(TopBar);
   const selectorScrim = () => containerFor(renderer.root.findByProps({ accessibilityLabel: 'Close device list' }));
   const selectorList = () => containerFor(renderer.root.findAllByProps({ accessibilityLabel: 'Add Apple TV' })[0]);
-  expectHidden(containerFor(topBar()), false);
   expectHidden(selectorScrim(), true);
   expectHidden(selectorList(), true);
   await ReactTestRenderer.act(() => topBar().props.onToggleSelector());
@@ -156,11 +160,15 @@ test('remote controls and selector controls follow the visible overlay state', a
   for (const label of ['Mute', 'Power']) {
     expectHidden(containerFor(renderer.root.findAllByProps({ accessibilityLabel: label })[0]), false);
   }
+  // The drawer lives inside the pad: only the pad hides behind it, while the top bar and transport stay reachable.
+  const padLayer = () => containerFor(renderer.root.findAllByProps({ accessibilityLabel: 'Touch surface' })[0]);
+  expectHidden(padLayer(), false);
   await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(true));
-  expectHidden(containerFor(topBar()), true);
+  expectHidden(padLayer(), true);
   expect(renderer.root.findByType(AppDrawer).props.open).toBe(true);
+  expect(topBar().parent).toBeTruthy();
   await ReactTestRenderer.act(() => renderer.root.findByType(AppDrawer).props.onSettle(false));
-  expectHidden(containerFor(topBar()), false);
+  expectHidden(padLayer(), false);
   await ReactTestRenderer.act(() => renderer.unmount());
   appleTVStore.setConnection(previous);
 });
@@ -316,7 +324,7 @@ test('a cancelled header dismissal restores the open drawer once, while successf
         progress={progress}
         sheetHeight={200}
         width={360}
-        left={0}
+        radius={32}
         scale={1}
         device={device}
         onSettle={onSettle}
@@ -364,7 +372,7 @@ test('a header pan that fails before activation leaves the open animation untouc
         progress={progress}
         sheetHeight={200}
         width={360}
-        left={0}
+        radius={32}
         scale={1}
         device={device}
         onSettle={onSettle}

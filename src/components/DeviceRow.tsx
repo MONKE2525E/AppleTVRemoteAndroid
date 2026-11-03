@@ -4,6 +4,7 @@ import { GEOMETRY } from '../adaptive/geometry';
 import { COLORS } from '../animations/constants';
 import type { AppleTVDeviceInfo } from '../appletv/types';
 import { TVIcon } from './icons/Icons';
+import { glassButton } from './glassButton';
 import { PressableScale } from './PressableScale';
 
 interface DeviceRowProps {
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
   round: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.controlFill,
+    ...glassButton,
     flexShrink: 0,
   },
 });

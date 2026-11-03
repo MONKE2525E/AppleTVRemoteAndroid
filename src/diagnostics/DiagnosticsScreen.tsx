@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAdaptiveLayout } from '../adaptive/useAdaptiveLayout';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
@@ -61,7 +62,7 @@ export function DiagnosticsScreen({ visible, onClose }: DiagnosticsScreenProps) 
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <View style={styles.container}>
+      <GestureHandlerRootView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.heading}>Diagnostics</Text>
 
@@ -130,7 +131,7 @@ export function DiagnosticsScreen({ visible, onClose }: DiagnosticsScreenProps) 
             <Text style={styles.closeLabel}>Close</Text>
           </PressableScale>
         </ScrollView>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

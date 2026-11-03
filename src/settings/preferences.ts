@@ -41,3 +41,46 @@ export function useInputMode(): InputMode {
   }, []);
   return mode;
 }
+
+const HAPTICS_KEY = 'haptics';
+const hapticsListeners = new Set<(enabled: boolean) => void>();
+let hapticsEnabled = true;
+let hapticsLoaded: Promise<void> | undefined;
+
+function loadHaptics(): Promise<void> {
+  hapticsLoaded ??= NativeAppSettings.getPreference(HAPTICS_KEY).then(
+    stored => {
+      if (stored === 'off') applyHaptics(false, false);
+    },
+    () => {},
+  );
+  return hapticsLoaded;
+}
+
+function applyHaptics(enabled: boolean, persist: boolean) {
+  hapticsEnabled = enabled;
+  if (persist) NativeAppSettings.setPreference(HAPTICS_KEY, enabled ? 'on' : 'off');
+  hapticsListeners.forEach(listener => listener(enabled));
+}
+
+/** Read on every press, so the stored choice is loaded lazily on first use. */
+export function isHapticsEnabled(): boolean {
+  void loadHaptics();
+  return hapticsEnabled;
+}
+
+export function setHapticsEnabled(enabled: boolean) {
+  applyHaptics(enabled, true);
+  track('haptics_changed', { enabled });
+}
+
+export function useHapticsEnabled(): boolean {
+  const [enabled, setLocal] = useState(hapticsEnabled);
+  useEffect(() => {
+    hapticsListeners.add(setLocal);
+    setLocal(hapticsEnabled);
+    void loadHaptics();
+    return () => { hapticsListeners.delete(setLocal); };
+  }, []);
+  return enabled;
+}
