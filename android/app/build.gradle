@@ -152,6 +152,7 @@ dependencies {
     // through AppleTVController.
     implementation project(":protocol")
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
+    implementation "com.squareup.okhttp3:okhttp:4.9.2"
 
     // Foreground service notification (AppleTVService). Pinned below 1.19.x,
     // which requires compileSdk 37 (unreleased/canary at the time this SDK

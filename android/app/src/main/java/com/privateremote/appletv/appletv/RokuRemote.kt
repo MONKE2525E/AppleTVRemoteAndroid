@@ -18,12 +18,14 @@ import android.os.SystemClock
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
-import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.SocketTimeoutException
-import java.net.URL
 import java.net.URLEncoder
 import javax.xml.parsers.DocumentBuilderFactory
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 val AppleTvDevice.isRoku: Boolean get() = identifier?.startsWith("roku:") == true
 
@@ -39,6 +41,9 @@ class RokuHttpException(val statusCode: Int, message: String) : IOException(mess
 
 /** Roku ECP stays in the integration layer; it does not use Apple's pairing protocol. */
 class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8060) {
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(3, TimeUnit.SECONDS).readTimeout(3, TimeUnit.SECONDS)
+        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
     suspend fun press(name: String) {
         val key = when (name.uppercase()) {
             "UP" -> "Up"
@@ -104,36 +109,30 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
     private suspend fun request(path: String, method: String = "GET"): String = requestBytes(path, method).toString(Charsets.UTF_8)
 
     private suspend fun requestBytes(path: String, method: String = "GET"): ByteArray = withContext(Dispatchers.IO) {
-        val connection = URL("http://${device.address}:$ecpPort/$path").openConnection() as HttpURLConnection
-        try {
-            connection.connectTimeout = 3000
-            connection.readTimeout = 3000
-            connection.instanceFollowRedirects = false
-            connection.requestMethod = method
-            if (method == "POST") {
-                connection.doOutput = true
-                connection.setFixedLengthStreamingMode(0)
-                connection.outputStream.close()
-            }
-            val status = connection.responseCode
-            if (status !in 200..299) {
-                throw RokuHttpException(status, if (status == 401 || status == 403)
-                    "Enable Control by mobile apps in your Roku's advanced system settings."
-                    else "Roku returned HTTP $status")
-            }
-            connection.inputStream.use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (output.size() + count > 512 * 1024) throw IOException("Roku response too large")
-                    output.write(buffer, 0, count)
+        val request = Request.Builder().url("http://${device.address}:$ecpPort/$path")
+            .method(method, if (method == "POST") ByteArray(0).toRequestBody() else null).build()
+        val call = http.newCall(request)
+        closeOnCancellation({ call.cancel() }) {
+            call.execute().use { response ->
+                val status = response.code
+                if (status !in 200..299) {
+                    throw RokuHttpException(status, if (status == 401 || status == 403)
+                        "Enable Control by mobile apps in your Roku's advanced system settings."
+                        else "Roku returned HTTP $status")
                 }
-                output.toByteArray()
+                response.body!!.byteStream().use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > 512 * 1024) throw IOException("Roku response too large")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
             }
-        } finally {
-            connection.disconnect()
         }
     }
 
