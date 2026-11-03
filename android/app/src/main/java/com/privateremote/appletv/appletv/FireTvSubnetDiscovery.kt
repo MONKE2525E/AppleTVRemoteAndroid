@@ -48,22 +48,24 @@ internal class FireTvSubnetDiscovery(context: Context) {
             val address = link.address as? Inet4Address ?: return@flatMap emptyList()
             subnetCandidates(address, link.prefixLength)
         }.distinct()
-        scanFireTvSubnet(addresses.filterNot { it in skipAddresses }, lastActivation, onResolved)
+        scanFireTvSubnet(addresses, lastActivation, skipAddresses, onResolved = onResolved)
     }
 }
 
 internal suspend fun scanFireTvSubnet(
     addresses: List<String>,
     lastActivation: MutableMap<String, Long> = ConcurrentHashMap(),
+    skipAddresses: Set<String> = emptySet(),
+    probe: suspend (String) -> AppleTvDevice? = { probeFireTv(it, lastActivation = lastActivation) },
     onResolved: (AppleTvDevice) -> Unit,
 ) {
     withTimeoutOrNull(7_000) {
         coroutineScope {
             val slots = Semaphore(48)
-            addresses.forEach { address ->
+            addresses.filterNot { it in skipAddresses }.forEach { address ->
                 launch {
                     slots.withPermit {
-                        try { probeFireTv(address, lastActivation = lastActivation)?.let(onResolved) }
+                        try { probe(address)?.let(onResolved) }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { }
                     }

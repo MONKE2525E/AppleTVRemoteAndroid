@@ -107,4 +107,19 @@ class FireTvSubnetDiscoveryTest {
         } finally { attempts.shutdownNow() }
     }
 
+    @Test fun `scan probes advertised addresses unless a certificate was resolved`() = runBlocking {
+        val exclusions = FireTvCertifiedAddresses()
+        fun device(address: String, id: String) = dev.atvremote.protocol.discovery.AppleTvDevice("Fire TV", address, 8080, "Fire TV", id)
+        exclusions.record(device("192.168.1.5", "firetv:dial:advertised"))
+        exclusions.record(device("192.168.1.6", "firetv:cert:resolved"))
+        val probed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        scanFireTvSubnet(
+            listOf("192.168.1.5", "192.168.1.6"),
+            skipAddresses = exclusions.snapshot(),
+            probe = { address -> probed.add(address); null },
+            onResolved = {},
+        )
+        assertEquals(listOf("192.168.1.5"), probed)
+    }
+
 }
