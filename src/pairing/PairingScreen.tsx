@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from '../animations/constants';
 import { PressableScale } from '../components/PressableScale';
 import { TVIcon } from '../components/icons/Icons';
@@ -170,10 +170,10 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
         {pairingReady ? (
           <>
             <Text style={styles.status}>
-              A 4-digit code should appear on the TV. If it doesn’t, press a button on the Siri Remote and try pairing again.
+              A 4-digit code should appear on the TV. If it doesn’t, press a button on the TV remote and try pairing again.
             </Text>
             <TextInput
-              accessibilityLabel="Companion pairing code"
+              accessibilityLabel="TV pairing code"
               value={pin}
               onChangeText={setPin}
               keyboardType="number-pad"
@@ -213,7 +213,7 @@ export function PairingScreen({ devices, connection }: PairingScreenProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Apple TVs and Roku TVs on your network</Text>
+      <Text style={styles.title}>{Platform.OS === 'android' ? 'Apple TVs, Fire TVs and Roku TVs on your network' : 'Apple TVs and Roku TVs on your network'}</Text>
       <Pressable accessibilityRole="button" onPress={openSettings} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Settings</Text></Pressable>
       {connection.state === 'failed' && connection.device ? (
         <Pressable

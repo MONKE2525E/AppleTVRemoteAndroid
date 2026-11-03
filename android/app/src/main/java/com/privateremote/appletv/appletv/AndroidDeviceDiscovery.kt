@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * [DeviceDiscovery] backed by Android's NsdManager. The protocol module stays
@@ -35,7 +36,7 @@ import kotlin.coroutines.resume
  * remain active. Android 14+ uses service-info callbacks instead of the
  * deprecated resolver.
  */
-class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
+class AndroidDeviceDiscovery(context: Context, private val fireTv: Boolean = false) : DeviceDiscovery {
 
     private val appContext = context.applicationContext
     private val nsd = appContext.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -80,7 +81,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 for (info in found) {
                     try {
                         withTimeoutOrNull(3000) {
-                            if (Build.VERSION.SDK_INT >= 34) resolveUpdated(info) else resolve(info)
+                            if (Build.VERSION.SDK_INT >= 34) resolveUpdated(info) else resolveLegacy(info)
                         }?.also { device ->
                             devices["${info.serviceType}:${device.credentialKey}"] = device
                             Log.i(TAG, "NSD resolved ${device.name} ${device.address}:${device.port}")
@@ -95,7 +96,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
 
             val listeners = mutableListOf<NsdManager.DiscoveryListener>()
             try {
-                listOf(COMPANION_SERVICE_TYPE, "_airplay._tcp", "_googlecast._tcp").forEach { type ->
+                (if (fireTv) listOf("_amzn-fireTv._tcp") else listOf(COMPANION_SERVICE_TYPE, "_airplay._tcp", "_googlecast._tcp")).forEach { type ->
                     val discoveryListener = listener()
                     try {
                         nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
@@ -124,7 +125,7 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
             }
             val companionHosts = companion.map { it.address }.toSet()
             val cast = devices.filterKeys { it.contains("_googlecast._tcp", ignoreCase = true) }.values
-            (merged + airplay.filter { it.address !in companionHosts } + cast).also { it.forEach(onResolved) }
+            (if (fireTv) devices.values.toList() else merged + airplay.filter { it.address !in companionHosts } + cast).also { it.forEach(onResolved) }
         } } }
 
     @androidx.annotation.RequiresApi(34)
@@ -150,12 +151,30 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
         }
     }
 
+    private class ResolutionAlreadyActive : Exception()
+
+    private suspend fun resolveLegacy(info: NsdServiceInfo): AppleTvDevice? =
+        legacyResolutionMutex.withLock {
+            while (true) {
+                try {
+                    return@withLock resolve(info)
+                } catch (_: ResolutionAlreadyActive) {
+                    delay(250)
+                }
+            }
+            @Suppress("UNREACHABLE_CODE")
+            null
+        }
+
     private suspend fun resolve(info: NsdServiceInfo): AppleTvDevice? =
         suspendCancellableCoroutine { cont: CancellableContinuation<AppleTvDevice?> ->
             val listener = object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                     Log.w(TAG, "NSD resolve failed ${serviceInfo.serviceName} code=$errorCode")
-                    if (cont.isActive) cont.resume(null)
+                    if (cont.isActive) {
+                        if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) cont.resumeWithException(ResolutionAlreadyActive())
+                        else cont.resume(null)
+                    }
                 }
 
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
@@ -167,10 +186,6 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 }
             }
             nsd.resolveService(info, listener)
-            // Android 14 added a cancellation API for in-flight resolutions.
-            if (Build.VERSION.SDK_INT >= 34) {
-                cont.invokeOnCancellation { runCatching { nsd.stopServiceResolution(listener) } }
-            }
         }
 
     private fun hostAddress(info: NsdServiceInfo): String? {
@@ -185,10 +200,12 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
     }
 
     private fun parseService(info: NsdServiceInfo, host: String): AppleTvDevice =
-        deviceFromService(info.serviceName, host, info.port, info.serviceType,
+        if (fireTv) AppleTvDevice(info.serviceName, host, info.port, model = "Fire TV", identifier = "firetv:mdns:${info.serviceName}")
+        else deviceFromService(info.serviceName, host, info.port, info.serviceType,
             info.attributes.mapValues { it.value.toString(Charsets.UTF_8) })
 
     companion object {
         private const val TAG = "AtvDiscovery"
+        private val legacyResolutionMutex = Mutex()
     }
 }

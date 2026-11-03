@@ -1,5 +1,6 @@
 import ReactTestRenderer from 'react-test-renderer';
 import { useState } from 'react';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NativeAppleTV from '../src/specs/NativeAppleTV';
 import { PairingScreen } from '../src/pairing/PairingScreen';
@@ -165,11 +166,11 @@ test('failed Companion PIN submission clears the code and retry starts a fresh p
 
   await ReactTestRenderer.act(async () => { await press(renderer, `Pair with ${otherTv.name}`); });
   expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
-  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' });
+  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'TV pairing code' });
   await ReactTestRenderer.act(() => pinInput().props.onChangeText('1234'));
   await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
 
-  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Companion pairing code' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'TV pairing code' })).toHaveLength(0);
   expect(texts(renderer)).toContain('Could not reach the TV while a VPN is active.');
   expect(texts(renderer)).toContain('Try again');
 
@@ -208,11 +209,11 @@ test('Add TV PIN failure clears the code and retry starts a fresh pairing', asyn
 
   await ReactTestRenderer.act(async () => { await press(renderer, otherTv.name); });
   expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
-  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' });
+  const pinInput = () => renderer.root.findByProps({ accessibilityLabel: 'TV pairing code' });
   await ReactTestRenderer.act(() => pinInput().props.onChangeText('1234'));
   await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
 
-  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Companion pairing code' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'TV pairing code' })).toHaveLength(0);
   expect(texts(renderer)).toContain('Could not reach the TV while a VPN is active.');
   expect(texts(renderer)).toContain('Try again');
 
@@ -238,7 +239,7 @@ test('Add TV closes after PIN acceptance and shows the connection retry state', 
   });
 
   await ReactTestRenderer.act(async () => { await press(renderer, otherTv.name); });
-  await ReactTestRenderer.act(() => renderer.root.findByProps({ accessibilityLabel: 'Companion pairing code' }).props.onChangeText('1234'));
+  await ReactTestRenderer.act(() => renderer.root.findByProps({ accessibilityLabel: 'TV pairing code' }).props.onChangeText('1234'));
   await ReactTestRenderer.act(async () => { await press(renderer, 'Submit pairing PIN'); });
 
   expect(appleTVStore.getSnapshot().connection).toEqual(failedAfterPairing);
@@ -246,4 +247,19 @@ test('Add TV closes after PIN acceptance and shows the connection retry state', 
   expect(NativeAppleTV.startPairing).toHaveBeenCalledTimes(1);
   expect(NativeAppleTV.submitPin).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+
+test('discovery describes Fire TV support only on Android', async () => {
+  const platform = jest.replaceProperty(Platform, 'OS', 'android');
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  try {
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<PairingScreen devices={[]} connection={{ state: 'disconnected' }} />);
+    });
+    expect(texts(renderer)).toContain('Apple TVs, Fire TVs and Roku TVs on your network');
+    await ReactTestRenderer.act(() => renderer.unmount());
+  } finally {
+    platform.restore();
+  }
 });

@@ -21,6 +21,7 @@ interface TopBarProps {
   onRequestDeleteDevice: (deviceId: string) => void;
   onToggleMute: () => void;
   onPower: () => void;
+  showDeviceControls?: boolean;
 }
 
 /**
@@ -44,6 +45,7 @@ export function TopBar({
   onRequestDeleteDevice,
   onToggleMute,
   onPower,
+  showDeviceControls = true,
 }: TopBarProps) {
   const sideButtonStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 1], [1, 0]),
@@ -78,9 +80,9 @@ export function TopBar({
           importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
           accessibilityElementsHidden={selectorOpen}
         >
-          <CircleIconButton size={rowSize} onPress={onToggleMute} accessibilityLabel={muted ? 'Unmute' : 'Mute'}>
+          {showDeviceControls ? <CircleIconButton size={rowSize} onPress={onToggleMute} accessibilityLabel={muted ? 'Unmute' : 'Mute'}>
             <MuteIcon size={rowSize * 0.4} />
-          </CircleIconButton>
+          </CircleIconButton> : <View style={{ width: rowSize, height: rowSize }} />}
         </Animated.View>
 
         <DeviceSelectorPill label={label} progress={progress} scale={scale} onPress={onToggleSelector} />
@@ -91,9 +93,9 @@ export function TopBar({
           importantForAccessibility={selectorOpen ? 'no-hide-descendants' : 'auto'}
           accessibilityElementsHidden={selectorOpen}
         >
-          <CircleIconButton size={rowSize} onPress={onPower} accessibilityLabel="Power">
+          {showDeviceControls ? <CircleIconButton size={rowSize} onPress={onPower} accessibilityLabel="Power">
             <PowerIcon size={rowSize * 0.4} />
-          </CircleIconButton>
+          </CircleIconButton> : <View style={{ width: rowSize, height: rowSize }} />}
         </Animated.View>
       </View>
 

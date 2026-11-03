@@ -29,7 +29,7 @@ export function openSettings() { openPanel?.(); }
 interface PermissionItem { id: PermissionId; title: string; detail: string }
 
 const PERMISSIONS: PermissionItem[] = [
-  { id: 'nearby', title: 'Nearby devices', detail: 'Find Apple TVs and Roku TVs on your Wi-Fi.' },
+  { id: 'nearby', title: 'Nearby devices', detail: Platform.OS === 'android' ? 'Find Apple TVs, Fire TVs and Roku TVs on your Wi-Fi.' : 'Find Apple TVs and Roku TVs on your Wi-Fi.' },
   { id: 'notifications', title: 'Playback activities and updates', detail: 'Playback controls and update alerts.' },
   ...(Platform.OS === 'android' && Number(Platform.Version) >= 36 ? [
     { id: 'liveUpdates' as const, title: 'Live Updates', detail: 'Playback chip and lock-screen controls.' },

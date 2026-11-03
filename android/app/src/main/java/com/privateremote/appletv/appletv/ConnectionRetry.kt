@@ -52,6 +52,7 @@ internal suspend fun <T> retryConnection(
 
 private fun isRetryableConnectionFailure(error: Exception): Boolean = when (error) {
     is RokuHttpException -> error.isRetryable
+    is FireTvAuthenticationException -> false
     is IOException, is TimeoutCancellationException -> true
     is ProtocolException -> error.message?.startsWith(RESPONSE_TIMEOUT_MESSAGE_PREFIX) == true
     else -> false

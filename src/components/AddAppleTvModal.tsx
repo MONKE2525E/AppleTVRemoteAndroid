@@ -194,7 +194,7 @@ export function AddAppleTvModal({ visible, onClose }: AddAppleTvModalProps) {
               <>
                 <Text style={styles.hint}>A 4-digit code is shown on the TV.</Text>
                 <TextInput
-                  accessibilityLabel="Companion pairing code"
+                  accessibilityLabel="TV pairing code"
                   value={pin}
                   onChangeText={setPin}
                   keyboardType="number-pad"
