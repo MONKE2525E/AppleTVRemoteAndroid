@@ -122,6 +122,7 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
 
     private suspend fun requestBytes(path: String, method: String = "GET"): ByteArray = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("http://${device.address}:$ecpPort/$path")
+            .header("Connection", "close")
             .method(method, if (method == "POST") ByteArray(0).toRequestBody() else null).build()
         val call = http.newCall(request)
         closeOnCancellation({ call.cancel() }) {

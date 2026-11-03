@@ -22,9 +22,10 @@ class RokuRemoteTest {
                     server.accept().use { client ->
                         val input = client.getInputStream().bufferedReader()
                         val firstLine = requireNotNull(input.readLine())
-                        while (input.readLine()?.isNotEmpty() == true) { }
+                        val headers = generateSequence { input.readLine()?.takeIf(String::isNotEmpty) }.toList()
+                        assertTrue(headers.any { it.equals("Connection: close", ignoreCase = true) })
                         client.getOutputStream().apply {
-                            write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                            write("HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray())
                             flush()
                         }
                         firstLine
