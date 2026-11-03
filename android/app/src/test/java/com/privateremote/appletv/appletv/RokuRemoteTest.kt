@@ -3,6 +3,8 @@ package com.privateremote.appletv.appletv
 import dev.atvremote.protocol.discovery.AppleTvDevice
 import dev.atvremote.protocol.mrp.PlaybackState
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.io.IOException
@@ -43,6 +45,27 @@ class RokuRemoteTest {
         } finally {
             server.close()
             executor.shutdownNow()
+        }
+    }
+
+    @Test fun `cancelling a Roku request interrupts an incomplete HTTP header`() {
+        ServerSocket(0).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val response = executor.submit {
+                    server.accept().use { client ->
+                        val request = client.getInputStream().bufferedReader()
+                        while (request.readLine()?.isNotEmpty() == true) { }
+                        client.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nX-Wait: ".toByteArray()); flush() }
+                        client.getInputStream().read()
+                    }
+                }
+                val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+                assertThrows(TimeoutCancellationException::class.java) {
+                    runBlocking { withTimeout(500) { RokuRemote(device, server.localPort).verify() } }
+                }
+                response.get(3, TimeUnit.SECONDS)
+            } finally { executor.shutdownNow() }
         }
     }
 

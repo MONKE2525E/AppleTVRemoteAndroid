@@ -270,6 +270,7 @@ class AppleTVController(
                 }
             }) {
                 try { connectDevice(deviceId) }
+                catch (e: CancellationException) { throw e }
                 catch (e: Exception) { throw connectionFailure(e) }
             }
         } catch (e: Exception) {
@@ -318,7 +319,7 @@ class AppleTVController(
             r.onDisconnect = { error ->
                 if (remote === r) handleDisconnect(device, error)
             }
-            r.connect()
+            closeOnCancellation({ r.close() }) { r.connect() }
 
             remote = r
             currentDevice = device

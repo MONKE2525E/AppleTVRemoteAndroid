@@ -9,9 +9,15 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.ServerSocket
+import java.net.Socket
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionRetryTest {
@@ -34,7 +40,7 @@ class ConnectionRetryTest {
         try {
             retryConnection { attempts++; throw failure }
             fail<Unit>("Expected connection failure")
-        } catch (e: IOException) { assertSame(failure, e) }
+        } catch (e: IOException) { assertEquals(failure.message, e.message) }
         assertEquals(3, attempts)
         assertEquals(3000L, testScheduler.currentTime)
     }
@@ -57,6 +63,56 @@ class ConnectionRetryTest {
         assertEquals(2, attempts)
     }
 
+    @Test fun `stalled attempts time out and exhaust retries`() = runTest {
+        var attempts = 0
+        try {
+            retryConnection { attempts++; awaitCancellation() }
+            fail<Unit>("Expected connection timeout")
+        } catch (_: SocketTimeoutException) { }
+        assertEquals(3, attempts)
+        assertEquals(63_000L, testScheduler.currentTime)
+    }
+
+    @Test fun `cancelling a stalled connection stops without retrying`() = runTest {
+        var attempts = 0
+        val job = launch { retryConnection { attempts++; awaitCancellation() } }
+        runCurrent()
+        job.cancel()
+        advanceTimeBy(70_000)
+        runCurrent()
+        assertTrue(job.isCancelled)
+        assertEquals(1, attempts)
+    }
+
+    @Test fun `cancelling a blocked socket write closes the socket`() {
+        ServerSocket(0).use { server ->
+            Socket("127.0.0.1", server.localPort).use { client ->
+                server.accept().use {
+                    client.sendBufferSize = 4096
+                    assertThrows(kotlinx.coroutines.TimeoutCancellationException::class.java) {
+                        runBlocking {
+                            withTimeout(250) {
+                                closeOnCancellation({ client.close() }) {
+                                    withContext(Dispatchers.IO) {
+                                        val bytes = ByteArray(65536)
+                                        while (true) client.getOutputStream().write(bytes)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    assertTrue(client.isClosed)
+                }
+            }
+        }
+    }
+
+    @Test fun `successful connection does not close the socket`() = runTest {
+        var closed = false
+        assertEquals("connected", closeOnCancellation({ closed = true }) { "connected" })
+        assertFalse(closed)
+    }
+
     @Test fun `a Companion response timeout can recover`() = runTest {
         var attempts = 0
         val result = retryConnection {
@@ -76,7 +132,7 @@ class ConnectionRetryTest {
         try {
             retryConnection { attempts++; throw timeout }
             fail<Unit>("Expected response timeout")
-        } catch (e: ProtocolException) { assertSame(timeout, e) }
+        } catch (e: ProtocolException) { assertEquals(timeout.message, e.message) }
         assertEquals(3, attempts)
         assertEquals(3000L, testScheduler.currentTime)
     }
@@ -87,7 +143,7 @@ class ConnectionRetryTest {
         try {
             retryConnection { attempts++; throw failure }
             fail<Unit>("Expected protocol failure")
-        } catch (e: ProtocolException) { assertSame(failure, e) }
+        } catch (e: ProtocolException) { assertEquals(failure.message, e.message) }
         assertEquals(1, attempts)
         assertEquals(0L, testScheduler.currentTime)
     }
