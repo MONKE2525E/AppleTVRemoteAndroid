@@ -125,13 +125,13 @@ class AppleTVController(
             while (isActive) {
                 try {
                     val fireResults = mutableMapOf<String, AppleTvDevice>()
-                    val certifiedAddresses = mutableSetOf<String>()
+                    val certifiedAddresses = FireTvCertifiedAddresses()
                     coroutineScope {
                         val fireIdentities = FireTvIdentities(store::loadFireTvAlias, store::saveFireTvAlias) { store.loadFireTv(it) != null }
                         val found: (AppleTvDevice) -> Unit = { discovered ->
                             synchronized(results) {
                                 if (discovered.isFireTv) {
-                                    if (discovered.credentialKey.startsWith("firetv:cert:")) certifiedAddresses.add(discovered.address)
+                                    certifiedAddresses.record(discovered)
                                     val device = fireIdentities.resolve(discovered)
                                     val previous = fireResults[device.address] ?: results.values.firstOrNull { it.isFireTv && it.address == device.address }
                                     val merged = mergeFireTvName(device, previous)
@@ -179,7 +179,7 @@ class AppleTVController(
                                 launch {
                                     try {
                                         delay(2000)
-                                        val foundAddresses = synchronized(results) { certifiedAddresses.toSet() }
+                                        val foundAddresses = certifiedAddresses.snapshot()
                                         fireSubnetDiscovery.scan(foundAddresses, found)
                                     } catch (e: CancellationException) { throw e }
                                     catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }

@@ -94,6 +94,13 @@ private val discoveryTrust = object : X509TrustManager {
 
 private val certificateExecutor = Executors.newFixedThreadPool(8) { task -> Thread(task, "fire-tv-certificate").apply { isDaemon = true } }
 
+internal fun reserveFireTvActivation(lastActivation: MutableMap<String, Long>, address: String, now: Long): Boolean =
+    synchronized(lastActivation) {
+        val previous = lastActivation[address]
+        if (previous != null && now - previous < 60_000) false
+        else { lastActivation[address] = now; true }
+    }
+
 private val discoveryClient: OkHttpClient by lazy {
     val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(discoveryTrust), null) }
     OkHttpClient.Builder().sslSocketFactory(ssl.socketFactory, discoveryTrust)
@@ -152,9 +159,7 @@ internal suspend fun probeFireTv(
     if (fingerprint == null) {
         if (!allowActivation) return null
         val now = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
-        val previous = lastActivation[address]
-        if (previous != null && now - previous < 60_000) return null
-        lastActivation[address] = now
+        if (!reserveFireTvActivation(lastActivation, address, now)) return null
         val launched = fireTvFetch(Request.Builder().url(dialUrl).post(ByteArray(0).toRequestBody()).build()) { it.isSuccessful } == true
         if (!launched) return null
         repeat(3) {

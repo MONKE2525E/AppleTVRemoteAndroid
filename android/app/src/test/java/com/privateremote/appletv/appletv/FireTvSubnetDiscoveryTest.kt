@@ -65,6 +65,10 @@ class FireTvSubnetDiscoveryTest {
         remote.start()
         try {
             val service = "<service><name>FireTVRemote</name></service>"
+            val exclusions = FireTvCertifiedAddresses()
+            val advertised = dev.atvremote.protocol.discovery.AppleTvDevice("Living room", "127.0.0.1", 8080, "Fire TV", "firetv:dial:uuid:test")
+            exclusions.record(advertised)
+            assertFalse("127.0.0.1" in exclusions.snapshot())
             dial.enqueue(MockResponse().setBody(service))
             remote.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.FAIL_HANDSHAKE))
             assertNull(probeFireTv("127.0.0.1", dial.port, remote.port, allowActivation = false))
@@ -75,17 +79,32 @@ class FireTvSubnetDiscoveryTest {
             remote.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.FAIL_HANDSHAKE))
             val activated = probeFireTv("127.0.0.1", dial.port, remote.port)!!
             assertTrue(activated.identifier!!.startsWith("firetv:cert:"))
+            exclusions.record(activated)
+            assertTrue("127.0.0.1" in exclusions.snapshot())
             assertEquals("GET", dial.takeRequest().method)
             assertEquals("GET", dial.takeRequest().method)
             assertEquals("POST", dial.takeRequest().method)
 
-            val advertised = activated.copy(name = "Living room", identifier = "firetv:dial:uuid:test")
             val aliases = mutableMapOf<String, String>()
             val resolver = FireTvIdentities({ aliases[it] }, { id, canonical -> aliases[id] = canonical }, { it == activated.identifier })
             resolver.resolve(advertised)
             assertEquals(activated.identifier, resolver.resolve(activated).identifier)
             assertEquals(activated.identifier, aliases[advertised.identifier])
         } finally { dial.shutdown(); remote.shutdown() }
+    }
+
+    @Test fun `concurrent scans reserve only one activation`() {
+        val attempts = java.util.concurrent.Executors.newFixedThreadPool(16)
+        val start = java.util.concurrent.CountDownLatch(1)
+        val activations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        try {
+            val futures = (1..16).map {
+                attempts.submit<Boolean> { start.await(); reserveFireTvActivation(activations, "192.168.0.169", 100_000) }
+            }
+            start.countDown()
+            assertEquals(1, futures.count { it.get(2, TimeUnit.SECONDS) })
+            assertTrue(reserveFireTvActivation(activations, "192.168.0.169", 160_000))
+        } finally { attempts.shutdownNow() }
     }
 
 }

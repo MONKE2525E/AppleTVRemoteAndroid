@@ -5,6 +5,16 @@ import dev.atvremote.protocol.discovery.AppleTvDevice
 internal fun mergeFireTvName(device: AppleTvDevice, previous: AppleTvDevice?): AppleTvDevice =
     if (device.name == "Fire TV" && previous != null && previous.name != "Fire TV") device.copy(name = previous.name) else device
 
+internal class FireTvCertifiedAddresses {
+    private val addresses = mutableSetOf<String>()
+
+    @Synchronized fun record(device: AppleTvDevice) {
+        if (device.credentialKey.startsWith("firetv:cert:")) addresses.add(device.address)
+    }
+
+    @Synchronized fun snapshot(): Set<String> = addresses.toSet()
+}
+
 /** Reconcile advertisements observed together during one discovery scan. */
 internal class FireTvIdentities(
     private val lookup: (String) -> String?,
