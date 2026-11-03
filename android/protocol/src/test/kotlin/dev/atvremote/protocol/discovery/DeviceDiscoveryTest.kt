@@ -14,13 +14,13 @@ class DeviceDiscoveryTest {
         val speaker = deviceFromService("Speaker", "1.2.3.5", 7000, "_airplay._tcp.", mapOf("model" to "AudioAccessory5,1", "deviceid" to "aa:bb"))
         assertEquals(DeviceKind.HOMEPOD, speaker.kind)
         assertEquals("aa:bb", speaker.credentialKey)
-        assertFalse(speaker.controllable)
+        assertTrue(speaker.controllable)
     }
 
     @Test fun classifiesOtherReceiversAndRoku() {
         val receiver = deviceFromService("Receiver", "1", 7000, "_airplay._tcp", mapOf("pi" to "receiver"))
         assertEquals(DeviceKind.AIRPLAY, receiver.kind)
-        assertFalse(receiver.controllable)
+        assertTrue(receiver.controllable)
         val cast = deviceFromService("Cast", "2", 8009, "_googlecast._tcp", mapOf("id" to "abc", "md" to "Chromecast"))
         assertEquals("cast:abc", cast.credentialKey)
         assertEquals(DeviceKind.ANDROID_TV, cast.kind)

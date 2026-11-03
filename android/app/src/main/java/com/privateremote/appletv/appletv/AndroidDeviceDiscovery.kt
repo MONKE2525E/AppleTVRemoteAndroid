@@ -113,13 +113,18 @@ class AndroidDeviceDiscovery(context: Context) : DeviceDiscovery {
                 listeners.forEach { runCatching { nsd.stopServiceDiscovery(it) } }
                 runCatching { if (multicast.isHeld) multicast.release() }
             }
-            // Prefer Companion for a host offering both services; its port and ID
-            // are required by the existing Apple TV pairing flow.
-            val companionHosts = devices.filterKeys { it.contains(COMPANION_SERVICE_TYPE, ignoreCase = true) }
-                .values.map { it.address }.toSet()
-            devices.filter { (key, device) -> key.contains(COMPANION_SERVICE_TYPE, ignoreCase = true) ||
-                device.kind == DeviceKind.ANDROID_TV || device.address !in companionHosts }.values.toList()
-                .also { it.forEach(onResolved) }
+            val companion = devices.filterKeys { it.contains(COMPANION_SERVICE_TYPE, ignoreCase = true) }.values.toList()
+            val airplay = devices.filterKeys { it.contains("_airplay._tcp", ignoreCase = true) }.values.toList()
+            val merged = companion.map { device ->
+                val receiver = airplay.firstOrNull { it.address == device.address }
+                if (receiver == null) device else device.copy(
+                    outputUid = receiver.outputUid, airplayPort = receiver.airplayPort,
+                    kind = if (receiver.kind == DeviceKind.HOMEPOD) DeviceKind.HOMEPOD else device.kind,
+                )
+            }
+            val companionHosts = companion.map { it.address }.toSet()
+            val cast = devices.filterKeys { it.contains("_googlecast._tcp", ignoreCase = true) }.values
+            (merged + airplay.filter { it.address !in companionHosts } + cast).also { it.forEach(onResolved) }
         } } }
 
     @androidx.annotation.RequiresApi(34)

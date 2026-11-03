@@ -235,14 +235,21 @@ require hardware verification.
 
 ## AirPlay targets
 
-Discovery lists AirPlay receivers, HomePods and Google Cast devices alongside
-Apple TVs and Roku devices. HomePods and other AirPlay/Cast receivers are
-display-only (`controllable: false`): their connection, playback controls and
-volume are not implemented. Attempting to pair or connect returns
-`TARGET_UNSUPPORTED`. The existing Apple TV AirPlay pairing remains available
-for playback details. Playback transfer and audio output routing are not yet
-implemented; `transferPlayback` reports `TRANSFER_UNSUPPORTED`. No video
-handoff is provided. These paths have not been verified with physical receivers.
+Discovery includes AirPlay and Google Cast receivers. HomePods and AirPlay
+receivers can attempt an AirPlay 2 MRP connection using transient HAP pairing
+(PIN 3939 for open network access) or stored credentials from the PIN pairing
+flow. The MRP channel provides now-playing metadata and artwork, play/pause,
+next/previous and volume controls when the receiver exposes them. Google Cast
+receivers are display-only. Compatibility of generic AirPlay receivers is not
+known from DNS-SD alone; an AirPlay 1 receiver or a receiver without the MRP
+tunnel cannot use these controls.
+
+`transferPlayback` requests a cluster-aware MRP output-device selection and
+waits for the connected receiver to report the target in its output group. It
+routes audio; it does not transfer a video session. Routing needs an active
+MRP connection and a target advertising an output UID. The PIN flow, receiver
+controls, routing, and Samsung artwork rendering require real hardware testing;
+none has been verified on a HomePod or other physical receiver.
 
 When MRP does not provide artwork, the app may search the iTunes catalog using
 the current title and artist. It accepts only exact title and artist matches

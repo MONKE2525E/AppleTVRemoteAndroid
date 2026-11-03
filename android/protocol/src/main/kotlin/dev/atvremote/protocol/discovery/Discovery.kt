@@ -10,6 +10,8 @@ data class AppleTvDevice(
     /** Stable per-device identifier advertised as rpMRtID. */
     val identifier: String? = null,
     val kind: DeviceKind = classifyDevice(model, identifier),
+    val outputUid: String? = null,
+    val airplayPort: Int = 7000,
 ) {
     /**
      * Key used to store credentials for this device.
@@ -18,7 +20,7 @@ data class AppleTvDevice(
      * Companion port, so including it would orphan the stored pairing.
      */
     val credentialKey: String get() = identifier ?: address
-    val controllable: Boolean get() = kind == DeviceKind.APPLE_TV || kind == DeviceKind.ROKU
+    val controllable: Boolean get() = kind != DeviceKind.ANDROID_TV
 }
 
 const val COMPANION_SERVICE_TYPE = "_companion-link._tcp"
@@ -56,5 +58,7 @@ fun deviceFromService(name: String, address: String, port: Int, serviceType: Str
         DeviceKind.AIRPLAY, DeviceKind.HOMEPOD -> attributes["deviceid"] ?: attributes["pi"] ?: attributes["rpmrtid"]
         else -> attributes["rpmrtid"]
     }
-    return AppleTvDevice(name, address, port, model, id, kind)
+    val uid = attributes["psi"] ?: attributes["pi"] ?: attributes["deviceid"]
+    val airplayPort = if (serviceType.contains("_airplay._tcp", ignoreCase = true)) port else 7000
+    return AppleTvDevice(name, address, port, model, id, kind, uid, airplayPort)
 }

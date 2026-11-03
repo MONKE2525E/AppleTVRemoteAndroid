@@ -203,6 +203,7 @@ class AppleTVModule(reactContext: ReactApplicationContext) :
         is TargetUnsupportedException -> "TARGET_UNSUPPORTED"
         is TransferUnsupportedException -> "TRANSFER_UNSUPPORTED"
         is UnknownTargetException -> "UNKNOWN_TARGET"
+        is TransferFailure -> error.code
         else -> error.javaClass.simpleName
     }
 
