@@ -109,7 +109,7 @@ class MainActivity : ReactActivity() {
    */
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     val volume = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
-    if (!volume || serviceBinder?.getController()?.isConnected() != true) return super.dispatchKeyEvent(event)
+    if (!volume || serviceBinder?.getController()?.handlesVolumeKeys() != true) return super.dispatchKeyEvent(event)
     val up = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
     when (event.action) {
       KeyEvent.ACTION_DOWN -> volumeKeys.down(up, event.repeatCount > 0)

@@ -275,7 +275,7 @@ export function RemoteScreen() {
             },
           ]}
         >
-          <TransportRow scale={scale} playback={playback} />
+          <TransportRow scale={scale} playback={playback} toggleOnly={isFireTv} />
         </View>
       </View>
 
