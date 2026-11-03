@@ -942,9 +942,13 @@ class AppleTVController(
     suspend fun setPlaying(playing: Boolean) {
         buttonGate.withLock {
             val r = roku
+            val fire = fireTv
             if (r != null) {
                 val state = r.playback().playbackState
                 if (state == PlaybackState.PLAYING && !playing || state == PlaybackState.PAUSED && playing) r.press("PLAY_PAUSE")
+            } else if (fire != null) {
+                // Fire TV exposes a toggle, not separate play and pause commands.
+                fireCommand(fire, "PLAY_PAUSE")
             } else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
                 (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).sendCommand(if (playing) 1 else 2)
             else command { if (playing) play() else pause() }

@@ -37,6 +37,22 @@ class FireTvRemoteTest {
     }
 
     @Test
+    fun `play pause sends the media toggle`() = runBlocking {
+        val cert = HeldCertificate.Builder().commonName("Fire TV").build()
+        val server = MockWebServer()
+        server.useHttps(HandshakeCertificates.Builder().heldCertificate(cert).build().sslSocketFactory(), false)
+        server.start()
+        try {
+            repeat(2) { server.enqueue(MockResponse().setBody("{}")) }
+            val device = AppleTvDevice("Fire TV", "127.0.0.1", server.port, "Fire TV", "firetv:test")
+            val remote = FireTvRemote(device, token = "test-token")
+            remote.press("PLAY_PAUSE")
+            remote.press("PLAY_PAUSE")
+            repeat(2) { assertEquals("/v1/media?action=play", server.takeRequest().path) }
+        } finally { server.shutdown() }
+    }
+
+    @Test
     fun `a different certificate cannot receive the stored token`() {
         val cert = HeldCertificate.Builder().commonName("Other receiver").build()
         val server = MockWebServer()
