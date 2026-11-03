@@ -197,7 +197,7 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
-          <TextEntryPrompt key={connection.device.id} roku={isRoku} />
+          <TextEntryPrompt key={connection.rokuSession ?? connection.device.id} roku={isRoku} rokuSessionId={connection.rokuSession ?? undefined} />
           {padHeight > 0 && (inputMode === 'buttons' ? (
             <ButtonPad
               width={touchSurfaceWidth}

@@ -40,7 +40,7 @@ function useTextSync() {
  * appears while a field is focused, and tapping it opens a keyboard whose
  * contents are mirrored into the field as you type.
  */
-export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
+export function TextEntryPrompt({ roku = false, rokuSessionId }: { roku?: boolean; rokuSessionId?: string }) {
   const { textInput } = useAppleTV();
   const [open, setOpen] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -83,9 +83,11 @@ export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
           const previous = Array.from(rokuSent.current);
           let common = 0;
           while (common < previous.length && common < next.length && previous[common] === next[common]) common++;
-          for (let i = common; i < previous.length && rokuActive.current; i++) await appleTV.rokuBackspace();
           const suffix = next.slice(common).join('');
-          if (suffix && rokuActive.current) await appleTV.sendRokuText(suffix);
+          if (rokuActive.current && (previous.length > common || suffix)) {
+            if (!rokuSessionId) throw new Error('Roku session unavailable');
+            await appleTV.sendRokuEdit(rokuSessionId, previous.length - common, suffix);
+          }
           rokuSent.current = next.join('');
         }
       } catch {

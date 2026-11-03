@@ -30,6 +30,9 @@ import java.util.concurrent.TimeUnit
 
 val AppleTvDevice.isRoku: Boolean get() = identifier?.startsWith("roku:") == true
 
+internal fun requireRokuSession(remote: RokuRemote?, sessionId: String): RokuRemote =
+    remote?.takeIf { it.sessionId == sessionId } ?: throw IOException("Roku session changed")
+
 class RokuHttpException(val statusCode: Int, message: String) : IOException(message) {
     val isRetryable: Boolean
         get() = statusCode == 408 || statusCode == 429 ||
@@ -42,6 +45,7 @@ class RokuHttpException(val statusCode: Int, message: String) : IOException(mess
 
 /** Roku ECP stays in the integration layer; it does not use Apple's pairing protocol. */
 class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8060) {
+    val sessionId: String = java.util.UUID.randomUUID().toString()
     private val callsLock = Any()
     private val calls = mutableSetOf<Call>()
     private var closed = false

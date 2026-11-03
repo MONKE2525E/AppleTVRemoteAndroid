@@ -366,7 +366,7 @@ class AppleTVController(
             lastCapabilities = MediaCapabilities(play = true, pause = true, volume = true)
             listener?.onCapabilitiesChanged(lastCapabilities!!)
             listener?.onPlaybackChanged(null)
-            publishConnection(ConnectionState.Connected(verified, true))
+            publishConnection(ConnectionState.Connected(verified, true, candidate.sessionId))
             nowPlayingJob = scope.launch {
                 var failures = 0
                 while (isActive && roku === candidate) {
@@ -700,6 +700,14 @@ class AppleTVController(
     suspend fun sendText(text: String, clearPrevious: Boolean) {
         roku?.let { r -> buttonGate.withLock { r.sendText(text) }; return }
         command { sendText(text, clearPrevious) }
+    }
+
+    suspend fun sendRokuEdit(sessionId: String, backspaces: Int, text: String) {
+        buttonGate.withLock {
+            val r = requireRokuSession(roku, sessionId)
+            repeat(backspaces) { r.press("BACKSPACE") }
+            if (text.isNotEmpty()) r.sendText(text)
+        }
     }
 
     suspend fun loadApps() {

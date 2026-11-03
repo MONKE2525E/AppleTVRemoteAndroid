@@ -149,8 +149,7 @@ export const appleTV = {
   },
 
   sendText: (text: string, clearPrevious: boolean) => soft(NativeAppleTV.sendText(text, clearPrevious), 'sendText'),
-  sendRokuText: (text: string) => NativeAppleTV.sendText(text, false),
-  rokuBackspace: () => NativeAppleTV.pressButton('BACKSPACE'),
+  sendRokuEdit: (sessionId: string, backspaces: number, text: string) => NativeAppleTV.sendRokuEdit(sessionId, backspaces, text),
   /** Resolves false when the TV couldn't list its apps, so the drawer can offer a retry. */
   loadApps: (): Promise<boolean> => {
     if (DEV_FAKE_UI) {

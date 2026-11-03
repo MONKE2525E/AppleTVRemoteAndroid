@@ -12,7 +12,7 @@ export interface AppleTVDeviceInfo {
 export type ConnectionState =
   | { state: 'disconnected' }
   | { state: 'connecting'; device: AppleTVDeviceInfo }
-  | { state: 'connected'; device: AppleTVDeviceInfo; airplayPaired: boolean }
+  | { state: 'connected'; device: AppleTVDeviceInfo; airplayPaired: boolean; rokuSession?: string | null }
   | {
       state: 'failed';
       device: AppleTVDeviceInfo | null;

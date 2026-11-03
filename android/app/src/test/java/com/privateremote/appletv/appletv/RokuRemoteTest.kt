@@ -17,6 +17,15 @@ import java.util.concurrent.CountDownLatch
 import java.net.SocketTimeoutException
 
 class RokuRemoteTest {
+    @Test fun `an edit for a previous session is rejected after switching Roku`() {
+        val device = AppleTvDevice("Roku", "127.0.0.1", 8060, identifier = "roku:test")
+        val old = RokuRemote(device)
+        val replacement = RokuRemote(device)
+        assertSame(old, requireRokuSession(old, old.sessionId))
+        assertThrows(IOException::class.java) { requireRokuSession(replacement, old.sessionId) }
+        assertSame(replacement, requireRokuSession(replacement, replacement.sessionId))
+    }
+
     @Test fun `closing the Roku session stops an in-flight text batch`() {
         ServerSocket(0).use { server ->
             val received = CountDownLatch(1)

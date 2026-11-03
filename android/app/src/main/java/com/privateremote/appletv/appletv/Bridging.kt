@@ -35,6 +35,7 @@ fun ConnectionState.toWritableMap(): WritableMap = Arguments.createMap().apply {
             putString("state", "connected")
             putMap("device", device.toWritableMap())
             putBoolean("airplayPaired", airplayPaired)
+            putString("rokuSession", rokuSession)
         }
         is ConnectionState.Failed -> {
             putString("state", "failed")

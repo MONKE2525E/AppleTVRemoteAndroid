@@ -26,15 +26,14 @@ test('shows nothing until the TV focuses a text field', async () => {
 
 test('Roku offers manual typing, sends edits in order, and starts a fresh session', async () => {
   let tree: Renderer.ReactTestRenderer;
-  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku rokuSessionId="session-a" />); });
   const open = () => tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
   const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
   await act(async () => { open().props.onPress(); });
   await act(async () => { input().props.onChangeText('ab'); });
   await act(async () => { input().props.onChangeText('ac'); });
-  expect(NativeAppleTV.sendText).toHaveBeenNthCalledWith(1, 'ab', false);
-  expect(NativeAppleTV.pressButton).toHaveBeenCalledWith('BACKSPACE');
-  expect(NativeAppleTV.sendText).toHaveBeenNthCalledWith(2, 'c', false);
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenNthCalledWith(1, 'session-a', 0, 'ab');
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenNthCalledWith(2, 'session-a', 1, 'c');
   const dismiss = jest.spyOn(Keyboard, 'dismiss');
   await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
   expect(dismiss).toHaveBeenCalled();
@@ -42,16 +41,16 @@ test('Roku offers manual typing, sends edits in order, and starts a fresh sessio
   await act(async () => { open().props.onPress(); });
   expect(input().props.value).toBe('');
   await act(async () => { input().props.onChangeText('x'); });
-  expect(NativeAppleTV.sendText).toHaveBeenLastCalledWith('x', false);
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenLastCalledWith('session-a', 0, 'x');
   await act(async () => { tree!.unmount(); });
   dismiss.mockRestore();
 });
 
 test('Roku keeps the remote covered until queued text finishes after Done', async () => {
   let release: () => void = () => {};
-  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  (NativeAppleTV.sendRokuEdit as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
   let tree: Renderer.ReactTestRenderer;
-  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku rokuSessionId="session-a" />); });
   const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
   await act(async () => { pill.props.onPress(); });
   const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
@@ -61,16 +60,16 @@ test('Roku keeps the remote covered until queued text finishes after Done', asyn
   expect(tree!.root.findByType(Modal).props.visible).toBe(true);
   expect(input().props.editable).toBe(false);
   await act(async () => { release(); });
-  expect(NativeAppleTV.sendText).toHaveBeenLastCalledWith('b', false);
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenLastCalledWith('session-a', 0, 'b');
   expect(tree!.root.findByType(Modal).props.visible).toBe(false);
   await act(async () => { tree!.unmount(); });
 });
 
 test('Roku stops queued edits and reports a failed send', async () => {
   let reject: (error: Error) => void = () => {};
-  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+  (NativeAppleTV.sendRokuEdit as jest.Mock).mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
   let tree: Renderer.ReactTestRenderer;
-  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku rokuSessionId="session-a" />); });
   const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
   await act(async () => { pill.props.onPress(); });
   const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
@@ -81,10 +80,32 @@ test('Roku stops queued edits and reports a failed send', async () => {
   expect(tree!.root.findByType(Modal).props.visible).toBe(true);
   expect(input().props.editable).toBe(false);
   expect(tree!.root.findAllByProps({ children: 'Text may be incomplete. Check your Roku before trying again.' }).length).toBeGreaterThan(0);
-  expect(NativeAppleTV.sendText).toHaveBeenCalledTimes(1);
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenCalledTimes(1);
   await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
   expect(tree!.root.findByType(Modal).props.visible).toBe(false);
   await act(async () => { tree!.unmount(); });
+});
+
+test('queued Roku edits retain the original session across a native device switch', async () => {
+  let release: () => void = () => {};
+  let activeSession = 'session-a';
+  (NativeAppleTV.sendRokuEdit as jest.Mock).mockImplementation(async (session: string) => {
+    if (session !== activeSession) throw new Error('Roku session changed');
+    await new Promise<void>(resolve => { release = resolve; });
+  });
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku rokuSessionId="session-a" />); });
+  const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  await act(async () => { pill.props.onPress(); });
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { input().props.onChangeText('a'); });
+  await act(async () => { input().props.onChangeText('ab'); });
+  activeSession = 'session-b';
+  await act(async () => { release(); });
+  expect(NativeAppleTV.sendRokuEdit).toHaveBeenNthCalledWith(2, 'session-a', 0, 'b');
+  expect(input().props.editable).toBe(false);
+  await act(async () => { tree!.unmount(); });
+  (NativeAppleTV.sendRokuEdit as jest.Mock).mockReset().mockResolvedValue(undefined);
 });
 
 test('typing replaces the TV field and losing focus removes the prompt', async () => {
