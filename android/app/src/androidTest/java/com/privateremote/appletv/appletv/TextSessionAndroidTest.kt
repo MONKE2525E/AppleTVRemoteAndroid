@@ -37,7 +37,7 @@ class TextSessionAndroidTest {
                         val client = try { server.accept() } catch (_: SocketTimeoutException) { continue }
                         client.use {
                             val input = it.getInputStream().bufferedReader()
-                            val request = input.readLine()
+                            val request = input.readLine() ?: return@use
                             while (!input.readLine().isNullOrEmpty()) { }
                             requests.add(request)
                             val body = if (request.contains("query/device-info"))
@@ -95,7 +95,7 @@ class TextSessionAndroidTest {
                         executor.submit {
                             client.use {
                                 val input = it.getInputStream().bufferedReader()
-                                val request = input.readLine()
+                                val request = input.readLine() ?: return@use
                                 while (!input.readLine().isNullOrEmpty()) { }
                                 requests.add(request)
                                 if (request.contains("keypress/Lit_a")) {

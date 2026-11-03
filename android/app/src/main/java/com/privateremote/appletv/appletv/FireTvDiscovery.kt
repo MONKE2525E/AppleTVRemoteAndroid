@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -83,13 +82,13 @@ internal fun readFireTvDevice(description: URL, dialPort: Int = 8009): AppleTvDe
 }
 
 private fun safeXml(bytes: ByteArray): org.w3c.dom.Document? = try {
-    if (bytes.toString(Charsets.UTF_8).contains("<!DOCTYPE", ignoreCase = true)) null else {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        }
-        factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+    // Parse the checked UTF-8 text rather than the original bytes, so an XML
+    // encoding declaration cannot hide a document type from this check.
+    val text = bytes.toString(Charsets.UTF_8)
+    if (text.contains("<!DOCTYPE", ignoreCase = true)) null else {
+        val builder = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+        builder.setEntityResolver { _, _ -> throw org.xml.sax.SAXException("External entities are not allowed") }
+        builder.parse(org.xml.sax.InputSource(java.io.StringReader(text)))
     }
 } catch (_: Exception) { null }
 

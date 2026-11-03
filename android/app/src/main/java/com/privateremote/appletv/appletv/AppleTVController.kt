@@ -354,6 +354,7 @@ class AppleTVController(
             ap2?.onDisconnect = null
             runCatching { remote?.close() }
             runCatching { ap2?.close() }
+            roku?.close()
             remote = null
             ap2 = null
             roku = null
