@@ -156,12 +156,12 @@ class AppleTVController(
                                     catch (e: CancellationException) { throw e }
                                     catch (e: Exception) { Log.w(TAG, "Fire TV DIAL discovery failed", e) }
                                 }
-                                launch {
-                                    try { fireSubnetDiscovery.scan(found) }
-                                    catch (e: CancellationException) { throw e }
-                                    catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
-                                }
                             }
+                            try {
+                                val foundAddresses = synchronized(results) { fireResults.keys.toSet() }
+                                fireSubnetDiscovery.scan(foundAddresses, found)
+                            } catch (e: CancellationException) { throw e }
+                            catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
                             synchronized(results) {
                                 results.values.filter { it.isFireTv }.forEach { previous ->
                                     results.remove(previous.credentialKey)
@@ -378,13 +378,17 @@ class AppleTVController(
                         if (device.isFireTv) {
                             coroutineScope {
                                 val fireIdentities = FireTvIdentities(store::loadFireTvAlias, store::saveFireTvAlias) { store.loadFireTv(it) != null }
+                                val matched = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
                                 val found: (AppleTvDevice) -> Unit = { discovered ->
                                     val found = fireIdentities.resolve(discovered)
                                     devicesById[found.credentialKey] = found
+                                    if (found.credentialKey == deviceId) matched.add(found.address)
                                 }
-                                launch { fireDiscovery.scan(3000, found) }
-                                launch { fireDialDiscovery.scan(3000, found) }
-                                launch { fireSubnetDiscovery.scan(found) }
+                                coroutineScope {
+                                    launch { fireDiscovery.scan(3000, found) }
+                                    launch { fireDialDiscovery.scan(3000, found) }
+                                }
+                                fireSubnetDiscovery.scan(matched.toSet(), found)
                             }
                         } else discovery.scan(3000) { found -> devicesById[found.credentialKey] = found }
                     } catch (e: CancellationException) { throw e }
