@@ -131,7 +131,16 @@ class AppleTVController(
                             synchronized(results) {
                                 if (discovered.isFireTv) {
                                     val device = fireIdentities.resolve(discovered)
-                                    fireResults[device.address] = device
+                                    val previous = fireResults[device.address] ?: results.values.firstOrNull { it.isFireTv && it.address == device.address }
+                                    val merged = mergeFireTvName(device, previous)
+                                    fireResults[device.address] = merged
+                                    results.values.filter { it.isFireTv && it.address == device.address }.forEach {
+                                        results.remove(it.credentialKey)
+                                        devicesById.remove(it.credentialKey, it)
+                                    }
+                                    devicesById[merged.credentialKey] = merged
+                                    results[merged.credentialKey] = merged
+                                    listener?.onDevicesChanged(results.values.toList())
                                 } else {
                                     devicesById[discovered.credentialKey] = discovered
                                     results[discovered.credentialKey] = discovered
@@ -146,22 +155,34 @@ class AppleTVController(
                         }
                         launch {
                             coroutineScope {
+                                val multicastFound: (AppleTvDevice) -> Unit = { advertised ->
+                                    launch {
+                                        val certificate = try { probeFireTv(advertised.address, allowActivation = false) }
+                                        catch (e: CancellationException) { throw e }
+                                        catch (_: Exception) { null }
+                                        if (certificate != null) found(certificate)
+                                        found(advertised)
+                                    }
+                                }
                                 launch {
-                                    try { fireDiscovery.scan(DISCOVERY_TIMEOUT_MS, found) }
+                                    try { fireDiscovery.scan(DISCOVERY_TIMEOUT_MS, multicastFound) }
                                     catch (e: CancellationException) { throw e }
                                     catch (e: Exception) { Log.w(TAG, "Fire TV discovery failed", e) }
                                 }
                                 launch {
-                                    try { fireDialDiscovery.scan(DISCOVERY_TIMEOUT_MS, found) }
+                                    try { fireDialDiscovery.scan(DISCOVERY_TIMEOUT_MS, multicastFound) }
                                     catch (e: CancellationException) { throw e }
                                     catch (e: Exception) { Log.w(TAG, "Fire TV DIAL discovery failed", e) }
                                 }
+                                launch {
+                                    try {
+                                        delay(2000)
+                                        val foundAddresses = synchronized(results) { fireResults.keys.toSet() }
+                                        fireSubnetDiscovery.scan(foundAddresses, found)
+                                    } catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
+                                }
                             }
-                            try {
-                                val foundAddresses = synchronized(results) { fireResults.keys.toSet() }
-                                fireSubnetDiscovery.scan(foundAddresses, found)
-                            } catch (e: CancellationException) { throw e }
-                            catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
                             synchronized(results) {
                                 results.values.filter { it.isFireTv }.forEach { previous ->
                                     results.remove(previous.credentialKey)
@@ -385,8 +406,17 @@ class AppleTVController(
                                     if (found.credentialKey == deviceId) matched.add(found.address)
                                 }
                                 coroutineScope {
-                                    launch { fireDiscovery.scan(3000, found) }
-                                    launch { fireDialDiscovery.scan(3000, found) }
+                                    val multicastFound: (AppleTvDevice) -> Unit = { advertised ->
+                                        launch {
+                                            val certificate = try { probeFireTv(advertised.address, allowActivation = false) }
+                                            catch (e: CancellationException) { throw e }
+                                            catch (_: Exception) { null }
+                                            certificate?.let(found)
+                                            found(advertised)
+                                        }
+                                    }
+                                    launch { fireDiscovery.scan(3000, multicastFound) }
+                                    launch { fireDialDiscovery.scan(3000, multicastFound) }
                                 }
                                 fireSubnetDiscovery.scan(matched.toSet(), found)
                             }

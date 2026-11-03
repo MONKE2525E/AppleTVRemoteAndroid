@@ -7,13 +7,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import javax.xml.parsers.DocumentBuilderFactory
+import okhttp3.Request
 
 /** DIAL devices do not necessarily advertise their remote service via mDNS. */
 class FireTvDiscovery(context: Context) {
@@ -38,7 +39,9 @@ class FireTvDiscovery(context: Context) {
                         ?.substringAfter(':')?.trim() ?: continue
                     val url = safeLocation(location, packet.address) ?: continue
                     if (!seen.add(location)) continue
-                    try { readFireTvDevice(url)?.let(onResolved) } catch (_: Exception) { }
+                    try { readFireTvDevice(url)?.let(onResolved) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { }
                 }
             }
         } finally { if (lock.isHeld) lock.release() }
@@ -66,15 +69,9 @@ internal fun java.io.InputStream.readBytesLimited(limit: Int): ByteArray {
     return output.toByteArray()
 }
 
-internal fun readFireTvDevice(description: URL, dialPort: Int = 8009): AppleTvDevice? {
-    fun read(url: URL): ByteArray? {
-        val conn = url.openConnection() as HttpURLConnection
-        return try {
-            conn.instanceFollowRedirects = false
-            conn.connectTimeout = 1000
-            conn.readTimeout = 1000
-            if (conn.responseCode != 200) null else conn.inputStream.use { it.readBytesLimited(65536) }
-        } finally { conn.disconnect() }
+internal suspend fun readFireTvDevice(description: URL, dialPort: Int = 8009): AppleTvDevice? {
+    suspend fun read(url: URL): ByteArray? = fireTvFetch(Request.Builder().url(url).build()) { response ->
+        if (!response.isSuccessful) null else response.body?.byteStream()?.use { it.readBytesLimited(65536) }
     }
     val device = read(description)?.let { parseFireTvDescription(it, description.host) } ?: return null
     val service = read(URL("http", description.host, dialPort, "/apps/FireTVRemote")) ?: return null

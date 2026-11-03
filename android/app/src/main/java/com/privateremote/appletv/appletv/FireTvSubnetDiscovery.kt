@@ -102,7 +102,7 @@ private val discoveryClient: OkHttpClient by lazy {
         .callTimeout(1500, TimeUnit.MILLISECONDS).build()
 }
 
-private suspend fun <T> fetch(request: Request, read: (Response) -> T?): T? = suspendCancellableCoroutine { cont ->
+internal suspend fun <T> fireTvFetch(request: Request, read: (Response) -> T?): T? = suspendCancellableCoroutine { cont ->
     val call = discoveryClient.newCall(request)
     cont.invokeOnCancellation { call.cancel() }
     call.enqueue(object : Callback {
@@ -119,9 +119,10 @@ internal suspend fun probeFireTv(
     dialPort: Int = 8009,
     remotePort: Int = 8080,
     lastActivation: MutableMap<String, Long> = ConcurrentHashMap(),
+    allowActivation: Boolean = true,
 ): AppleTvDevice? {
     val dialUrl = "http://$address:$dialPort/apps/FireTVRemote"
-    val isRemote = fetch(Request.Builder().url(dialUrl).build()) { response ->
+    val isRemote = fireTvFetch(Request.Builder().url(dialUrl).build()) { response ->
         response.isSuccessful && response.body?.byteStream()?.use { isFireTvRemoteService(it.readBytesLimited(65536)) } == true
     } == true
     if (!isRemote) return null
@@ -149,11 +150,12 @@ internal suspend fun probeFireTv(
     }
     var fingerprint = certificate()
     if (fingerprint == null) {
+        if (!allowActivation) return null
         val now = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
         val previous = lastActivation[address]
         if (previous != null && now - previous < 60_000) return null
         lastActivation[address] = now
-        val launched = fetch(Request.Builder().url(dialUrl).post(ByteArray(0).toRequestBody()).build()) { it.isSuccessful } == true
+        val launched = fireTvFetch(Request.Builder().url(dialUrl).post(ByteArray(0).toRequestBody()).build()) { it.isSuccessful } == true
         if (!launched) return null
         repeat(3) {
             if (fingerprint == null) { delay(400); fingerprint = certificate() }

@@ -3,6 +3,9 @@ package com.privateremote.appletv.appletv
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.net.InetAddress
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.TimeUnit
 
 class FireTvDiscoveryTest {
     @Test fun `parses a Fire TV description with a stable identity`() {
@@ -70,7 +73,22 @@ class FireTvDiscoveryTest {
         assertEquals(dial, resolver.resolve(found).identifier)
     }
 
-    @Test fun `discovery verifies the Fire TV DIAL app for any television brand`() {
+    @Test fun `multicast reconciles with a paired certificate and keeps the friendly name`() {
+        val aliases = mutableMapOf<String, String>()
+        val cert = "firetv:cert:paired"
+        val mdns = "firetv:mdns:living-room"
+        val resolver = FireTvIdentities({ aliases[it] }, { id, canonical -> aliases[id] = canonical }, { it == cert })
+        val fallback = dev.atvremote.protocol.discovery.AppleTvDevice("Fire TV", "192.168.1.7", 8080, "Fire TV", cert)
+        val advertised = fallback.copy(name = "Living room", identifier = mdns)
+        val first = resolver.resolve(fallback)
+        val second = resolver.resolve(advertised)
+        assertEquals(cert, second.identifier)
+        assertEquals(cert, aliases[mdns])
+        assertEquals("Living room", mergeFireTvName(second, first).name)
+        assertEquals("Living room", mergeFireTvName(first, second).name)
+    }
+
+    @Test fun `discovery verifies the Fire TV DIAL app for any television brand`() = runBlocking {
         val server = okhttp3.mockwebserver.MockWebServer()
         server.start()
         val description = """<root><device><manufacturer>TCL</manufacturer><modelName>65S450F-CA</modelName><UDN>uuid:test</UDN></device></root>"""
@@ -85,6 +103,21 @@ class FireTvDiscoveryTest {
             server.enqueue(okhttp3.mockwebserver.MockResponse().setResponseCode(404))
             assertNull(readFireTvDevice(server.url("/description.xml").toUrl(), server.port))
             assertFalse(isFireTvRemoteService("<service><name>Other</name></service>".toByteArray()))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `slow DIAL description reads are bounded and cancellable`() = runBlocking {
+        val server = okhttp3.mockwebserver.MockWebServer()
+        server.start()
+        try {
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("<root>" + "x".repeat(100) + "</root>").throttleBody(1, 100, TimeUnit.MILLISECONDS))
+            val start = System.nanoTime()
+            assertNull(readFireTvDevice(server.url("/description.xml").toUrl(), server.port))
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 4000)
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE))
+            val cancelledAt = System.nanoTime()
+            assertNull(withTimeoutOrNull(200) { readFireTvDevice(server.url("/description.xml").toUrl(), server.port) })
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cancelledAt) < 2000)
         } finally { server.shutdown() }
     }
 

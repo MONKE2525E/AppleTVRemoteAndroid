@@ -2,6 +2,9 @@ package com.privateremote.appletv.appletv
 
 import dev.atvremote.protocol.discovery.AppleTvDevice
 
+internal fun mergeFireTvName(device: AppleTvDevice, previous: AppleTvDevice?): AppleTvDevice =
+    if (device.name == "Fire TV" && previous != null && previous.name != "Fire TV") device.copy(name = previous.name) else device
+
 /** Reconcile advertisements observed together during one discovery scan. */
 internal class FireTvIdentities(
     private val lookup: (String) -> String?,
