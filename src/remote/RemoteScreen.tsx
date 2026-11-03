@@ -8,6 +8,7 @@ import { COLORS, DRAWER_CLOSE_SPRING, SELECTOR_SPRING } from '../animations/cons
 import { useAppleTV } from '../appletv/useAppleTV';
 import { useAppIconCache } from '../appletv/useAppIconCache';
 import type { AppleTVDeviceInfo } from '../appletv/types';
+import { isAirPlayTarget } from '../appletv/deviceKinds';
 import { PressableScale } from '../components/PressableScale';
 import { TopBar } from '../components/TopBar';
 import { ButtonPad } from '../components/ButtonPad';
@@ -113,6 +114,8 @@ export function RemoteScreen() {
     (playback != null && playback.playbackState !== 'unknown' && playback.playbackState !== 'stopped') ||
     capabilities?.skipForward === true ||
     capabilities?.skipBackward === true);
+  // HomePods and AirPlay receivers have no Companion link, so seek, info and captions would silently fail.
+  const showContextualIcons = hasNowPlaying && !isAirPlayTarget(connection.device);
   const transportFooterHeight =
     (GEOMETRY.gapSurfaceToTransport + GEOMETRY.transportBigSize + GEOMETRY.bottomMargin) * scale;
 
@@ -213,7 +216,7 @@ export function RemoteScreen() {
               width={touchSurfaceWidth}
               height={padHeight}
               scale={scale}
-              showContextualIcons={hasNowPlaying}
+              showContextualIcons={showContextualIcons}
               bottomInset={drawerHandleInset}
               transportKeys={isRoku}
               onSkipBack={() => isRoku ? commands.pressButton('REWIND') : commands.skipBy(-10)}
@@ -225,7 +228,7 @@ export function RemoteScreen() {
               height={padHeight}
               borderRadius={GEOMETRY.touchSurfaceRadius * scale}
               scale={scale}
-              showContextualIcons={hasNowPlaying}
+              showContextualIcons={showContextualIcons}
               transportKeys={isRoku}
               onSkipBack={() => isRoku ? commands.pressButton('REWIND') : commands.skipBy(-10)}
               onSkipForward={() => isRoku ? commands.pressButton('FAST_FORWARD') : commands.skipBy(10)}

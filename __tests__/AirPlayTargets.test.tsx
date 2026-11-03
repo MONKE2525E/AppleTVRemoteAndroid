@@ -71,3 +71,48 @@ test('the app list for a TV round-trips through persistent storage', async () =>
   saveCachedApps('empty', []);
   expect(NativeAppSettings.setPreference).not.toHaveBeenCalledWith('appList.v1:empty', expect.anything());
 });
+
+describe('App Store artwork cache', () => {
+  const okResponse = (bundleId: string) => ({
+    ok: true,
+    json: async () => ({ results: [{ bundleId, artworkUrl512: `https://art/${bundleId}.png` }] }),
+  });
+
+  const loadModule = () => {
+    let mod!: typeof import('../src/appletv/appIcons');
+    jest.isolateModules(() => { mod = require('../src/appletv/appIcons'); });
+    return mod;
+  };
+
+  test('entries older than their lifetime are looked up again in the same session', async () => {
+    const fetchMock = jest.fn(async () => okResponse('com.netflix.Netflix'));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const { lookupAppleArtwork } = loadModule();
+    expect(await lookupAppleArtwork(['com.netflix.Netflix'])).toEqual({ 'com.netflix.Netflix': 'https://art/com.netflix.Netflix.png' });
+    const calls = fetchMock.mock.calls.length;
+    await lookupAppleArtwork(['com.netflix.Netflix']);
+    expect(fetchMock.mock.calls.length).toBe(calls);
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now + 31 * 24 * 60 * 60 * 1000);
+    await lookupAppleArtwork(['com.netflix.Netflix']);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(calls);
+  });
+
+  test('clearing while a lookup is in flight does not store its result', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetchMock = jest.fn(async () => { await gate; return okResponse('com.hulu.Hulu'); });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const { lookupAppleArtwork, clearArtworkCache } = loadModule();
+    const inFlight = lookupAppleArtwork(['com.hulu.Hulu']);
+    await act(async () => { await Promise.resolve(); });
+    clearArtworkCache();
+    jest.mocked(NativeAppSettings.setPreference).mockClear();
+    release();
+    await inFlight;
+    expect(NativeAppSettings.setPreference).not.toHaveBeenCalledWith('iconArtwork.v1', expect.stringContaining('com.hulu.Hulu'));
+    const calls = fetchMock.mock.calls.length;
+    await lookupAppleArtwork(['com.hulu.Hulu']);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(calls);
+  });
+});
