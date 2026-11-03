@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Keyboard, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -199,7 +200,7 @@ export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
         onShow={() => { if (!finishing) inputRef.current?.focus(); }}
         onRequestClose={close}
       >
-        <View style={styles.overlay}>
+        <GestureHandlerRootView style={styles.overlay}>
           <View style={styles.dialog}>
             <View style={styles.header}>
               <KeyboardIcon size={18} color={COLORS.iconSecondary} />
@@ -218,7 +219,7 @@ export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
                 autoCapitalize="none"
                 returnKeyType="done"
                 accessibilityLabel="Text to send to TV"
-                placeholder={roku ? 'Open a text field on your Roku first' : 'Appears on your TV as you type'}
+                placeholder={roku ? 'Type on your Roku' : 'Appears on your TV as you type'}
                 placeholderTextColor={COLORS.textSecondary}
                 selectionColor="rgba(255,255,255,0.35)"
                 cursorColor={COLORS.icon}
@@ -232,7 +233,7 @@ export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
               <Text style={styles.doneText}>{finishing ? 'Sending…' : 'Done'}</Text>
             </PressableScale>
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );
