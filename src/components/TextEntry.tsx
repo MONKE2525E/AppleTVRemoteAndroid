@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from '../animations/constants';
 import { appleTV } from '../appletv/client';
 import { useAppleTV } from '../appletv/useAppleTV';
@@ -39,9 +39,11 @@ function useTextSync() {
  * appears while a field is focused, and tapping it opens a keyboard whose
  * contents are mirrored into the field as you type.
  */
-export function TextEntryPrompt() {
+export function TextEntryPrompt({ roku = false }: { roku?: boolean }) {
   const { textInput } = useAppleTV();
   const [open, setOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [rokuError, setRokuError] = useState(false);
   const [value, setValue] = useState('');
   const { send: sync, cancel: cancelSync } = useTextSync();
   // The TV re-reports the pre-send text after each of our own edits, so the
@@ -50,16 +52,67 @@ export function TextEntryPrompt() {
   // and reuse the latest text while the TV only reports one of those.
   const typed = useRef<{ text: string; stale: Set<string> } | null>(null);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const rokuSent = useRef('');
+  const rokuSession = useRef(0);
+  const rokuSentSession = useRef(0);
+  const rokuPending = useRef<{ text: string; session: number } | null>(null);
+  const rokuRunning = useRef(false);
+  const rokuActive = useRef(true);
+  const rokuClosing = useRef(false);
+
+  useEffect(() => {
+    rokuActive.current = true;
+    return () => { rokuActive.current = false; rokuPending.current = null; };
+  }, []);
+
+  const syncRoku = (text: string) => {
+    rokuPending.current = { text, session: rokuSession.current };
+    if (rokuRunning.current) return;
+    rokuRunning.current = true;
+    void (async () => {
+      try {
+        while (rokuActive.current && rokuPending.current !== null) {
+          const pending = rokuPending.current;
+          const next = Array.from(pending.text);
+          rokuPending.current = null;
+          if (rokuSentSession.current !== pending.session) {
+            rokuSent.current = '';
+            rokuSentSession.current = pending.session;
+          }
+          const previous = Array.from(rokuSent.current);
+          let common = 0;
+          while (common < previous.length && common < next.length && previous[common] === next[common]) common++;
+          for (let i = common; i < previous.length && rokuActive.current; i++) await appleTV.rokuBackspace();
+          const suffix = next.slice(common).join('');
+          if (suffix && rokuActive.current) await appleTV.sendRokuText(suffix);
+          rokuSent.current = next.join('');
+        }
+      } catch {
+        rokuPending.current = null;
+        rokuClosing.current = false;
+        if (rokuActive.current) {
+          setFinishing(false);
+          setRokuError(true);
+        }
+      }
+      rokuRunning.current = false;
+      if (rokuActive.current && rokuClosing.current) {
+        rokuClosing.current = false;
+        setFinishing(false);
+        setOpen(false);
+      }
+    })();
+  };
 
   // The field lost focus on the TV (submitted, cancelled, navigated away), so
   // there is nothing left to type into.
   useEffect(() => {
-    if (!textInput.focused) {
+    if (!roku && !textInput.focused) {
       setOpen(false);
       typed.current = null;
       cancelSync();
     }
-  }, [textInput.focused, cancelSync]);
+  }, [roku, textInput.focused, cancelSync]);
   useEffect(() => cancelSync, [cancelSync]);
 
   // The TV can move straight to another populated field without reporting a
@@ -82,14 +135,32 @@ export function TextEntryPrompt() {
   // before the window can take focus, leaving the keyboard down. Focus
   // explicitly once the dialog is up, with a retry for slow transitions.
   useEffect(() => {
-    if (!open) return;
+    if (!open || finishing) return;
     const timers = [60, 250].map(ms => setTimeout(() => inputRef.current?.focus(), ms));
     return () => timers.forEach(clearTimeout);
-  }, [open]);
+  }, [open, finishing]);
 
-  if (!textInput.focused) return null;
+  if (!roku && !textInput.focused) return null;
+
+  const close = () => {
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+    if (roku && rokuRunning.current) {
+      rokuClosing.current = true;
+      setFinishing(true);
+      return;
+    }
+    setOpen(false);
+  };
 
   const show = () => {
+    if (roku) {
+      rokuSession.current++;
+      setRokuError(false);
+      setValue('');
+      setOpen(true);
+      return;
+    }
     const last = typed.current;
     if (last && last.stale.has(textInput.current ?? '')) {
       setValue(last.text);
@@ -102,7 +173,12 @@ export function TextEntryPrompt() {
     setOpen(true);
   };
   const onChangeText = (text: string) => {
+    if (rokuClosing.current || rokuError) return;
     setValue(text);
+    if (roku) {
+      syncRoku(text);
+      return;
+    }
     const stale = typed.current?.stale ?? new Set([textInput.current ?? '']);
     if (typed.current) stale.add(typed.current.text);
     typed.current = { text, stale };
@@ -120,8 +196,8 @@ export function TextEntryPrompt() {
         transparent
         animationType="fade"
         statusBarTranslucent
-        onShow={() => inputRef.current?.focus()}
-        onRequestClose={() => setOpen(false)}
+        onShow={() => { if (!finishing) inputRef.current?.focus(); }}
+        onRequestClose={close}
       >
         <View style={styles.overlay}>
           <View style={styles.dialog}>
@@ -133,15 +209,16 @@ export function TextEntryPrompt() {
               <TextInput
                 ref={inputRef}
                 value={value}
+                editable={!finishing && !rokuError}
                 onChangeText={onChangeText}
-                onSubmitEditing={() => setOpen(false)}
+                onSubmitEditing={close}
                 autoFocus
-                blurOnSubmit={false}
+                blurOnSubmit
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="done"
                 accessibilityLabel="Text to send to TV"
-                placeholder="Appears on your TV as you type"
+                placeholder={roku ? 'Open a text field on your Roku first' : 'Appears on your TV as you type'}
                 placeholderTextColor={COLORS.textSecondary}
                 selectionColor="rgba(255,255,255,0.35)"
                 cursorColor={COLORS.icon}
@@ -150,8 +227,9 @@ export function TextEntryPrompt() {
                 style={styles.input}
               />
             </View>
-            <PressableScale onPress={() => setOpen(false)} accessibilityLabel="Done typing" style={styles.done}>
-              <Text style={styles.doneText}>Done</Text>
+            {rokuError && <Text style={styles.error}>Text may be incomplete. Check your Roku before trying again.</Text>}
+            <PressableScale onPress={close} accessibilityLabel="Done typing" style={styles.done}>
+              <Text style={styles.doneText}>{finishing ? 'Sending…' : 'Done'}</Text>
             </PressableScale>
           </View>
         </View>
@@ -185,6 +263,7 @@ const styles = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   title: { color: COLORS.iconSecondary, fontSize: 15, fontWeight: '600' },
+  error: { color: COLORS.icon, fontSize: 14, textAlign: 'center' },
   field: { backgroundColor: COLORS.controlFill, borderRadius: 22, paddingHorizontal: 18, minHeight: 56, justifyContent: 'center' },
   input: { color: COLORS.icon, fontSize: 20, paddingVertical: 12 },
   done: { height: 48, borderRadius: 24, backgroundColor: COLORS.controlFillPressed, alignItems: 'center', justifyContent: 'center' },

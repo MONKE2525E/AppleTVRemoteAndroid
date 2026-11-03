@@ -54,11 +54,23 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
             "VOLUME_UP" -> "VolumeUp"
             "VOLUME_DOWN" -> "VolumeDown"
             "MUTE" -> "VolumeMute"
+            "BACKSPACE" -> "Backspace"
             "SLEEP" -> "PowerOff"
             "WAKE" -> "PowerOn"
             else -> throw IllegalArgumentException("$name is not supported on Roku")
         }
         request("keypress/$key", "POST")
+    }
+
+    suspend fun sendText(text: String) {
+        var offset = 0
+        while (offset < text.length) {
+            val codePoint = text.codePointAt(offset)
+            val character = String(Character.toChars(codePoint))
+            val encoded = URLEncoder.encode(character, "UTF-8").replace("+", "%20")
+            request("keypress/Lit_$encoded", "POST")
+            offset += Character.charCount(codePoint)
+        }
     }
 
     private var iconId: String? = null

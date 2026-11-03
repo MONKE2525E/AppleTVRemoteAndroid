@@ -82,6 +82,7 @@ export type RemoteButton =
   | 'RIGHT'
   | 'MENU'
   | 'BACK'
+  | 'BACKSPACE'
   | 'SELECT'
   | 'HOME'
   | 'TV'

@@ -11,6 +11,41 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class RokuRemoteTest {
+    @Test fun `text sends encoded characters and backspace in order`() {
+        val server = ServerSocket(0)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val requests = executor.submit<List<String>> {
+                (1..5).map {
+                    server.accept().use { client ->
+                        val input = client.getInputStream().bufferedReader()
+                        val firstLine = requireNotNull(input.readLine())
+                        while (input.readLine()?.isNotEmpty() == true) { }
+                        client.getOutputStream().apply {
+                            write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                            flush()
+                        }
+                        firstLine
+                    }
+                }
+            }
+            val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+            runBlocking {
+                val remote = RokuRemote(device, server.localPort)
+                remote.sendText("a /€")
+                remote.press("BACKSPACE")
+            }
+            assertEquals(listOf(
+                "POST /keypress/Lit_a HTTP/1.1", "POST /keypress/Lit_%20 HTTP/1.1",
+                "POST /keypress/Lit_%2F HTTP/1.1", "POST /keypress/Lit_%E2%82%AC HTTP/1.1",
+                "POST /keypress/Backspace HTTP/1.1",
+            ), requests.get(3, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test fun `document types cannot introduce entities into Roku responses`() {
         val xml = "<!DOCTYPE device-info [<!ENTITY serial 'injected'>]><device-info><serial-number>&serial;</serial-number></device-info>"
         assertThrows(IOException::class.java) { RokuRemote.parseDevice(xml, "192.168.1.10") }

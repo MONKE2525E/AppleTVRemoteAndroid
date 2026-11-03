@@ -692,6 +692,7 @@ class AppleTVController(
     }
 
     suspend fun sendText(text: String, clearPrevious: Boolean) {
+        roku?.let { r -> buttonGate.withLock { r.sendText(text) }; return }
         command { sendText(text, clearPrevious) }
     }
 

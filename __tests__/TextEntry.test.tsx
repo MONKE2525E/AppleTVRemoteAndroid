@@ -1,5 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
+import { Keyboard, Modal } from 'react-native';
 import NativeAppleTV from '../src/specs/NativeAppleTV';
 import { appleTVStore } from '../src/appletv/store';
 import { TextEntryPrompt } from '../src/components/TextEntry';
@@ -20,6 +21,69 @@ test('shows nothing until the TV focuses a text field', async () => {
   expect(tree!.root.findAllByProps({ accessibilityLabel: 'Type on TV' })).toHaveLength(0);
   await act(async () => { appleTVStore.setTextInput({ current: '', focused: true }); });
   expect(tree!.root.findAllByProps({ accessibilityLabel: 'Type on TV' }).length).toBeGreaterThan(0);
+  await act(async () => { tree!.unmount(); });
+});
+
+test('Roku offers manual typing, sends edits in order, and starts a fresh session', async () => {
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  const open = () => tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { open().props.onPress(); });
+  await act(async () => { input().props.onChangeText('ab'); });
+  await act(async () => { input().props.onChangeText('ac'); });
+  expect(NativeAppleTV.sendText).toHaveBeenNthCalledWith(1, 'ab', false);
+  expect(NativeAppleTV.pressButton).toHaveBeenCalledWith('BACKSPACE');
+  expect(NativeAppleTV.sendText).toHaveBeenNthCalledWith(2, 'c', false);
+  const dismiss = jest.spyOn(Keyboard, 'dismiss');
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  expect(dismiss).toHaveBeenCalled();
+  expect(tree!.root.findByType(Modal).props.visible).toBe(false);
+  await act(async () => { open().props.onPress(); });
+  expect(input().props.value).toBe('');
+  await act(async () => { input().props.onChangeText('x'); });
+  expect(NativeAppleTV.sendText).toHaveBeenLastCalledWith('x', false);
+  await act(async () => { tree!.unmount(); });
+  dismiss.mockRestore();
+});
+
+test('Roku keeps the remote covered until queued text finishes after Done', async () => {
+  let release: () => void = () => {};
+  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  await act(async () => { pill.props.onPress(); });
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { input().props.onChangeText('a'); });
+  await act(async () => { input().props.onChangeText('ab'); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  expect(tree!.root.findByType(Modal).props.visible).toBe(true);
+  expect(input().props.editable).toBe(false);
+  await act(async () => { release(); });
+  expect(NativeAppleTV.sendText).toHaveBeenLastCalledWith('b', false);
+  expect(tree!.root.findByType(Modal).props.visible).toBe(false);
+  await act(async () => { tree!.unmount(); });
+});
+
+test('Roku stops queued edits and reports a failed send', async () => {
+  let reject: (error: Error) => void = () => {};
+  (NativeAppleTV.sendText as jest.Mock).mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<TextEntryPrompt roku />); });
+  const pill = tree!.root.findAll(n => n.props.accessibilityLabel === 'Type on TV' && typeof n.props.onPress === 'function')[0];
+  await act(async () => { pill.props.onPress(); });
+  const input = () => tree!.root.findByProps({ accessibilityLabel: 'Text to send to TV' });
+  await act(async () => { input().props.onChangeText('a'); });
+  await act(async () => { input().props.onChangeText('ab'); });
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  await act(async () => { reject(new Error('network')); });
+  expect(tree!.root.findByType(Modal).props.visible).toBe(true);
+  expect(input().props.editable).toBe(false);
+  expect(tree!.root.findAllByProps({ children: 'Text may be incomplete. Check your Roku before trying again.' }).length).toBeGreaterThan(0);
+  expect(NativeAppleTV.sendText).toHaveBeenCalledTimes(1);
+  await act(async () => { tree!.root.findByProps({ accessibilityLabel: 'Done typing' }).props.onPress(); });
+  expect(tree!.root.findByType(Modal).props.visible).toBe(false);
   await act(async () => { tree!.unmount(); });
 });
 
