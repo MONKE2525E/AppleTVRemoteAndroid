@@ -28,6 +28,7 @@ export interface Spec extends TurboModule {
   // --- connection ---
   connect(deviceId: string): Promise<void>;
   disconnect(): Promise<void>;
+  transferPlayback(targetDeviceId: string): Promise<void>;
   forgetDevice(deviceId: string): Promise<void>;
 
   // --- power / volume ---

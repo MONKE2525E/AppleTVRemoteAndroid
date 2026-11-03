@@ -112,6 +112,10 @@ export const appleTV = {
       },
     );
   },
+  transferPlayback: (targetDeviceId: string): Promise<void> => {
+    if (DEV_FAKE_UI) return Promise.resolve();
+    return NativeAppleTV.transferPlayback(targetDeviceId);
+  },
   forgetDevice: (deviceId: string) => {
     appleTVStore.removePairedDevice(deviceId);
     if (DEV_FAKE_UI) return Promise.resolve();

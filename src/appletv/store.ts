@@ -126,10 +126,13 @@ class AppleTVStore {
       const previous = this.state.connection.state === 'connected' ? this.state.connection.device.id : null;
       // App lists are per-TV; never show the last device's apps for a new one.
       const apps = previous === connection.device.id ? this.state.apps : [];
-      this.set({ connection, devices, apps });
+      const textInput = previous !== null && previous !== connection.device.id
+        ? { current: null, focused: false }
+        : this.state.textInput;
+      this.set({ connection, devices, apps, textInput });
       return;
     }
-    this.set({ connection });
+    this.set({ connection, textInput: { current: null, focused: false } });
   }
   setPlayback(playback: PlaybackInfo | null) { this.set({ playback }); }
   setArtwork(artworkBase64: string | null) { this.set({ artworkBase64 }); }

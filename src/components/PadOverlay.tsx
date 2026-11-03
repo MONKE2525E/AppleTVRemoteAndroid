@@ -1,10 +1,11 @@
-import { ChevronUp, Settings } from 'lucide-react-native';
+import { Airplay, ChevronUp, Settings } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { runOnJS } from 'react-native-worklets';
 import {
   COLORS,
+  DRAWER_CLOSE_SPRING,
   DRAWER_COMMIT_FRACTION,
   DRAWER_FLICK_VELOCITY,
   DRAWER_SPRING,
@@ -22,6 +23,8 @@ interface PadOverlayProps {
   sheetHeight: number;
   onDrawerDragStart: () => void;
   onDrawerSettle: (open: boolean) => void;
+  /** When set, a "Play on..." button appears in the top-left corner. */
+  onTransfer?: () => void;
 }
 
 /**
@@ -37,6 +40,7 @@ export function PadOverlay({
   sheetHeight,
   onDrawerDragStart,
   onDrawerSettle,
+  onTransfer,
 }: PadOverlayProps) {
   const handleHeight = DRAWER_HANDLE_HEIGHT * scale;
   const gearSlot = 44 * scale;
@@ -45,7 +49,7 @@ export function PadOverlay({
   const settle = (open: boolean, velocityY: number) => {
     'worklet';
     drawerProgress.value = withSpring(open ? 1 : 0, {
-      ...DRAWER_SPRING,
+      ...(open ? DRAWER_SPRING : DRAWER_CLOSE_SPRING),
       velocity: sheetHeight > 0 ? -velocityY / sheetHeight : 0,
     });
     runOnJS(onDrawerSettle)(open);
@@ -100,6 +104,16 @@ export function PadOverlay({
 
   return (
     <View pointerEvents="box-none" style={[styles.overlay, { width }]}>
+      {onTransfer && (
+        <PressableScale
+          accessibilityLabel="Play on another device"
+          haptic="selection"
+          onPress={onTransfer}
+          style={[styles.gear, { width: gearSlot, height: gearSlot, top: 6 * scale, left: 6 * scale }]}
+        >
+          <Airplay size={20 * scale} color={COLORS.iconSecondary} strokeWidth={2} />
+        </PressableScale>
+      )}
       <PressableScale
         accessibilityLabel="Settings"
         haptic="selection"

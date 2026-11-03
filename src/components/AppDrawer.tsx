@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   Activity,
@@ -20,7 +20,6 @@ import {
 import Animated, {
   cancelAnimation,
   FadeIn,
-  FadeInDown,
   interpolate,
   useAnimatedStyle,
   useSharedValue,
@@ -30,9 +29,9 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { runOnJS } from 'react-native-worklets';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   COLORS,
+  DRAWER_CLOSE_SPRING,
   DRAWER_COMMIT_FRACTION,
   DRAWER_FLICK_VELOCITY,
   DRAWER_SPRING,
@@ -45,17 +44,22 @@ import { useAppleTV } from '../appletv/useAppleTV';
 import { PressableScale } from './PressableScale';
 
 const COLUMNS = 3;
-/** tvOS and Roku both draw app art as landscape tiles. */
+/** Height over width. tvOS art is a wide tile; Roku channel art is closer to 4:3 and was cropped at 0.6. */
 const TILE_ASPECT = 0.6;
+const ROKU_TILE_ASPECT = 0.75;
 
 interface AppDrawerProps {
   open: boolean;
   /** True as soon as a pull starts, so the list is loading before the sheet is fully up. */
   active: boolean;
+  /** 0 closed, 1 open. Springs past 1 on release, so readers must clamp. */
   progress: SharedValue<number>;
+  /** Height of the pad the sheet replaces; the sheet fills it exactly. */
   sheetHeight: number;
+  /** Width of the pad. */
   width: number;
-  left: number;
+  /** Corner radius, matching the pad so the sheet reads as the pad itself opening. */
+  radius: number;
   scale: number;
   device: AppleTVDeviceInfo;
   onSettle: (open: boolean) => void;
@@ -63,14 +67,14 @@ interface AppDrawerProps {
 
 type LoadState = 'loading' | 'ready' | 'error';
 
-export function AppDrawer({ open, active, progress, sheetHeight, width, left, scale, device, onSettle }: AppDrawerProps) {
+export function AppDrawer({ open, active, progress, sheetHeight, width, radius, scale, device, onSettle }: AppDrawerProps) {
   const { apps } = useAppleTV();
-  const insets = useSafeAreaInsets();
   const dragActive = useSharedValue(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [attempt, setAttempt] = useState(0);
   const [artwork, setArtwork] = useState<Record<string, string>>({});
   const roku = isRokuDevice(device);
+  const aspect = roku ? ROKU_TILE_ASPECT : TILE_ASPECT;
 
   useEffect(() => {
     if (!active) return;
@@ -103,7 +107,7 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
   };
 
   const close = () => {
-    progress.value = withSpring(0, DRAWER_SPRING);
+    progress.value = withSpring(0, DRAWER_CLOSE_SPRING);
     onSettle(false);
   };
 
@@ -132,7 +136,7 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
         event.velocityY > DRAWER_FLICK_VELOCITY ||
         (event.velocityY > -DRAWER_FLICK_VELOCITY && progress.value < 1 - DRAWER_COMMIT_FRACTION);
       progress.value = withSpring(dismiss ? 0 : 1, {
-        ...DRAWER_SPRING,
+        ...(dismiss ? DRAWER_CLOSE_SPRING : DRAWER_SPRING),
         velocity: sheetHeight > 0 ? -event.velocityY / sheetHeight : 0,
       });
       runOnJS(onSettle)(!dismiss);
@@ -147,79 +151,92 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
       }
     });
 
-  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value * 0.6 }));
+  // The sheet may rise at most `clipTop` past fully open (into the gap under
+  // the top bar), so an underdamped overshoot shows as a visible bounce. It is
+  // built `clipTop` taller than the pad so that bounce never exposes a gap.
+  const clipTop = 14 * scale;
   const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: (1 - progress.value) * (sheetHeight + insets.bottom + 24) }],
+    transform: [{ translateY: Math.max(-clipTop, (1 - progress.value) * (sheetHeight + 2)) }],
   }));
-  const headerStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0.35, 0.85], [0, 1], 'clamp'),
+  // Icons fade in with the sheet rather than each tile springing in on its own,
+  // which read as jittery while the sheet itself was still moving.
+  const gridStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.35, 0.9], [0, 1], 'clamp'),
   }));
+  const handleHeight = 30 * scale;
+  const fadeHeight = 26 * scale;
+
+  const closeFromHandle = () => close();
+  const tapHandle = Gesture.Tap().onEnd((_event, success) => {
+    'worklet';
+    if (success) runOnJS(closeFromHandle)();
+  });
 
   const gap = 14 * scale;
-  const padding = 20 * scale;
+  const padding = 18 * scale;
   // Floor so float rounding can never push the last column onto the next row.
   const tileWidth = Math.max(0, Math.floor((width - padding * 2 - gap * (COLUMNS - 1)) / COLUMNS));
   const showGrid = apps.length > 0 && loadState !== 'error';
 
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.window, { top: -clipTop, width, height: sheetHeight + clipTop }]}
+    >
       <Animated.View
         pointerEvents={open ? 'auto' : 'none'}
         importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
         accessibilityElementsHidden={!open}
-        style={[styles.scrim, scrimStyle]}
-      >
-        <Pressable accessibilityLabel="Close apps" style={StyleSheet.absoluteFill} onPress={close} />
-      </Animated.View>
-
-      <Animated.View
-        pointerEvents={open ? 'auto' : 'none'}
-        importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
-        accessibilityElementsHidden={!open}
+        accessibilityViewIsModal={open}
         style={[
           styles.sheet,
           {
-            left,
+            top: clipTop,
             width,
-            height: sheetHeight + insets.bottom,
-            paddingBottom: insets.bottom,
-            borderTopLeftRadius: 28 * scale,
-            borderTopRightRadius: 28 * scale,
+            height: sheetHeight + clipTop,
+            borderRadius: radius,
           },
           sheetStyle,
         ]}
       >
-        <GestureDetector gesture={drag}>
-          <View style={{ paddingHorizontal: padding, paddingBottom: 12 * scale }}>
-            <View style={[styles.grabber, { marginTop: 8 * scale, marginBottom: 14 * scale }]} />
-            <Animated.View style={[styles.headerRow, headerStyle]}>
-              <View style={styles.flex}>
-                <Text style={[styles.title, { fontSize: 22 * scale }]}>Apps</Text>
-                <Text numberOfLines={1} style={[styles.subtitle, { fontSize: 13 * scale }]}>
-                  {device.name}
-                </Text>
-              </View>
-              {loadState === 'loading' && showGrid && <Spinner size={16 * scale} />}
-            </Animated.View>
+        <GestureDetector gesture={Gesture.Exclusive(drag, tapHandle)}>
+          <View
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel="Close apps"
+            accessibilityActions={[{ name: 'activate', label: 'Close apps' }]}
+            onAccessibilityAction={event => {
+              if (event.nativeEvent.actionName === 'activate') close();
+            }}
+            onAccessibilityTap={close}
+            style={[styles.handle, { height: handleHeight }]}
+          >
+            <View style={styles.grabber} />
           </View>
         </GestureDetector>
 
         {showGrid ? (
-          <ScrollView
-            style={styles.flex}
-            contentContainerStyle={[styles.grid, { paddingHorizontal: padding, gap, paddingBottom: 24 * scale }]}
-            showsVerticalScrollIndicator={false}
-          >
-            {apps.map((app, index) => (
-              <Animated.View
-                key={`${device.id}:${app.bundleId}`}
-                entering={FadeInDown.delay(Math.min(index, 14) * 22).duration(260)}
-                style={{ width: tileWidth }}
-              >
-                <AppTile app={app} icon={iconFor(app)} width={tileWidth} scale={scale} onPress={() => launch(app)} />
-              </Animated.View>
-            ))}
-          </ScrollView>
+          <Animated.View style={[styles.flex, gridStyle]}>
+            <ScrollView
+              style={styles.flex}
+              overScrollMode="always"
+              bounces
+              contentContainerStyle={[
+                styles.grid,
+                { paddingHorizontal: padding, gap, paddingTop: 4 * scale, paddingBottom: 28 * scale + clipTop },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
+              {apps.map(app => (
+                <View key={`${device.id}:${app.bundleId}`} style={{ width: tileWidth }}>
+                  <AppTile app={app} icon={iconFor(app)} width={tileWidth} aspect={aspect} scale={scale} onPress={() => launch(app)} />
+                </View>
+              ))}
+            </ScrollView>
+            {/* Icons fade out under the handle and off the bottom edge instead of being cut. */}
+            <View pointerEvents="none" style={[styles.fadeTop, { height: fadeHeight }]} />
+            <View pointerEvents="none" style={[styles.fadeBottom, { height: fadeHeight + clipTop }]} />
+          </Animated.View>
         ) : loadState === 'error' ? (
           <Animated.View entering={FadeIn.duration(200)} style={styles.message}>
             <Text style={[styles.messageText, { fontSize: 15 * scale }]}>Couldn't load apps from {device.name}.</Text>
@@ -237,7 +254,7 @@ export function AppDrawer({ open, active, progress, sheetHeight, width, left, sc
             <Text style={[styles.messageText, { fontSize: 15 * scale }]}>No apps found.</Text>
           </Animated.View>
         ) : (
-          <SkeletonGrid tileWidth={tileWidth} gap={gap} padding={padding} scale={scale} />
+          <SkeletonGrid tileWidth={tileWidth} aspect={aspect} gap={gap} padding={padding} scale={scale} />
         )}
       </Animated.View>
     </View>
@@ -248,19 +265,20 @@ interface AppTileProps {
   app: AppInfo;
   icon: ImageSourcePropType | string | null;
   width: number;
+  aspect: number;
   scale: number;
   onPress: () => void;
 }
 
-function AppTile({ app, icon, width, scale, onPress }: AppTileProps) {
+function AppTile({ app, icon, width, aspect, scale, onPress }: AppTileProps) {
   const [failed, setFailed] = useState(false);
-  const height = width * TILE_ASPECT;
+  const height = width * aspect;
   const radius = 12 * scale;
 
   useEffect(() => setFailed(false), [icon]);
 
   return (
-    <PressableScale accessibilityLabel={`Open ${app.name}`} haptic="medium" onPress={onPress}>
+    <PressableScale accessibilityLabel={`Open ${app.name}`} haptic="medium" bouncy onPress={onPress}>
       <View style={[styles.tile, { width, height, borderRadius: radius }]}>
         {icon && !failed ? (
           <Image
@@ -314,7 +332,7 @@ function GlyphTile({ app, width, height }: { app: AppInfo; width: number; height
   );
 }
 
-function SkeletonGrid({ tileWidth, gap, padding, scale }: { tileWidth: number; gap: number; padding: number; scale: number }) {
+function SkeletonGrid({ tileWidth, aspect, gap, padding, scale }: { tileWidth: number; aspect: number; gap: number; padding: number; scale: number }) {
   const pulse = useSharedValue(0);
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 700 }), -1, true);
@@ -329,7 +347,7 @@ function SkeletonGrid({ tileWidth, gap, padding, scale }: { tileWidth: number; g
     >
       {Array.from({ length: 9 }, (_, index) => (
         <View key={index} style={{ width: tileWidth }}>
-          <View style={[styles.skeleton, { height: tileWidth * TILE_ASPECT, borderRadius: 12 * scale }]} />
+          <View style={[styles.skeleton, { height: tileWidth * aspect, borderRadius: 12 * scale }]} />
           <View
             style={[
               styles.skeleton,
@@ -343,55 +361,42 @@ function SkeletonGrid({ tileWidth, gap, padding, scale }: { tileWidth: number; g
   );
 }
 
-function Spinner({ size }: { size: number }) {
-  const turn = useSharedValue(0);
-  useEffect(() => {
-    turn.value = withRepeat(withTiming(1, { duration: 900 }), -1, false);
-    return () => cancelAnimation(turn);
-  }, [turn]);
-  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 360}deg` }] }));
-  return (
-    <Animated.View accessibilityLabel="Refreshing apps" style={style}>
-      <RefreshCw size={size} color={COLORS.iconSecondary} strokeWidth={2.2} />
-    </Animated.View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  // Above TopBar's elevation 20, which otherwise draws over overlays on Android.
-  scrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: COLORS.scrim,
-    zIndex: 30,
-    elevation: 30,
+  // Clip window over the pad: lets the sheet bounce a little above the pad's
+  // top edge while still hiding it below the pad's bottom edge when closed.
+  window: {
+    position: 'absolute',
+    alignSelf: 'center',
+    overflow: 'hidden',
+    zIndex: 5,
   },
   sheet: {
     position: 'absolute',
-    bottom: 0,
+    left: 0,
     backgroundColor: COLORS.sheetFill,
     overflow: 'hidden',
-    zIndex: 31,
-    elevation: 31,
   },
+  handle: { alignItems: 'center', justifyContent: 'center' },
   grabber: {
-    alignSelf: 'center',
     width: 38,
     height: 5,
     borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.28)',
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  fadeTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundImage: 'linear-gradient(180deg, rgb(28,28,30), rgba(28,28,30,0))',
   },
-  title: {
-    color: COLORS.icon,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: COLORS.textSecondary,
-    marginTop: 2,
+  fadeBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundImage: 'linear-gradient(180deg, rgba(28,28,30,0), rgb(28,28,30))',
   },
   grid: {
     flexDirection: 'row',

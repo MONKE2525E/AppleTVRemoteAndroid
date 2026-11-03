@@ -8,6 +8,7 @@ export default {
   submitAirPlayPin: jest.fn(async () => true),
   connect: jest.fn(async () => {}),
   disconnect: jest.fn(async () => {}),
+  transferPlayback: jest.fn(async () => {}),
   forgetDevice: jest.fn(async () => {}),
   sleep: jest.fn(async () => {}),
   wake: jest.fn(async () => {}),

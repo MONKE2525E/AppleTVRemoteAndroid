@@ -66,3 +66,22 @@ test('forgetting a failed target clears that failure while preserving other pair
   expect(appleTVStore.getSnapshot().devices).toEqual([deviceA]);
   expect(appleTVStore.getSnapshot().apps).toEqual([]);
 });
+
+
+test('text focus is cleared on disconnect or switching devices but preserved for same-device updates', () => {
+  appleTVStore.setConnection({ state: 'connected', device: deviceA, airplayPaired: false });
+  appleTVStore.setTextInput({ current: 'private', focused: true });
+  appleTVStore.setConnection({ state: 'connected', device: deviceA, airplayPaired: true });
+  expect(appleTVStore.getSnapshot().textInput).toEqual({ current: 'private', focused: true });
+
+  appleTVStore.setConnection({ state: 'connecting', device: deviceB });
+  expect(appleTVStore.getSnapshot().textInput).toEqual({ current: null, focused: false });
+  appleTVStore.setConnection({ state: 'connected', device: deviceB, airplayPaired: true });
+  expect(appleTVStore.getSnapshot().textInput.focused).toBe(false);
+  appleTVStore.setTextInput({ current: 'another', focused: true });
+  appleTVStore.setConnection({ state: 'connected', device: deviceA, airplayPaired: true });
+  expect(appleTVStore.getSnapshot().textInput).toEqual({ current: null, focused: false });
+  appleTVStore.setTextInput({ current: 'another', focused: true });
+  appleTVStore.setConnection({ state: 'disconnected' });
+  expect(appleTVStore.getSnapshot().textInput).toEqual({ current: null, focused: false });
+});

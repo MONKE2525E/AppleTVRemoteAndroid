@@ -18,6 +18,8 @@ fun AppleTvDevice.toWritableMap(): WritableMap = Arguments.createMap().apply {
     putInt("port", port)
     putString("model", model)
     putString("identifier", identifier)
+    putString("kind", kind.wireValue)
+    putBoolean("controllable", controllable)
 }
 
 fun List<AppleTvDevice>.devicesToWritableArray(): WritableArray = Arguments.createArray().apply {

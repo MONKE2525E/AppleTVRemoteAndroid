@@ -25,7 +25,7 @@ test('settings lists permissions, requests one, and persists the input mode', as
   const nearby = tree!.root.findByProps({ accessibilityLabel: 'Request Nearby devices' });
   await act(async () => { await nearby.props.onPress(); });
   expect(request).toHaveBeenCalledWith('android.permission.NEARBY_WIFI_DEVICES', expect.any(Object));
-  await act(async () => { tree!.root.findAll(n => n.props.accessibilityRole === 'radio' && typeof n.props.onPress === 'function')[1].props.onPress(); });
+  await act(async () => { tree!.root.findAll(n => n.props.accessibilityLabel === 'Buttons' && n.props.accessibilityRole === 'radio' && typeof n.props.onPress === 'function')[0].props.onPress(); });
   expect(NativeAppSettings.setPreference).toHaveBeenCalledWith('inputMode', 'buttons');
   await act(async () => { setInputMode('swipe'); tree!.unmount(); });
   jest.restoreAllMocks();
