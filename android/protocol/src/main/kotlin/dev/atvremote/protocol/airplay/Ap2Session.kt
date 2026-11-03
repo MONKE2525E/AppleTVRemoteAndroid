@@ -2,11 +2,16 @@ package dev.atvremote.protocol.airplay
 
 import dev.atvremote.protocol.Log
 import dev.atvremote.protocol.hap.Credentials
+import dev.atvremote.protocol.mrp.MrpControl
 import dev.atvremote.protocol.mrp.Mrp
 import dev.atvremote.protocol.mrp.NowPlaying
 import dev.atvremote.protocol.mrp.PlaybackState
 import dev.atvremote.protocol.mrp.ProtoMessage
 import dev.atvremote.protocol.plist.BinaryPlist
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,9 +32,10 @@ import kotlin.random.Random
  */
 class Ap2Session(
     private val host: String,
-    private val credentials: Credentials,
+    private val credentials: Credentials?,
     private val scope: CoroutineScope,
     private val deviceName: String = "Android Remote",
+    private val port: Int = AIRPLAY_PORT,
 ) {
     private var connection: AirPlayConnection? = null
     private var eventChannel: EventChannel? = null
@@ -41,18 +47,24 @@ class Ap2Session(
     /** Per-app state, keyed by bundle identifier. */
     private val clients = LinkedHashMap<String, NowPlaying>()
     private var activeBundleId: String? = null
+    @Volatile var outputDeviceUid: String? = null
+        private set
+    @Volatile var volume: Double? = null
+        private set
+    private val routingMutex = Mutex()
+    @Volatile private var routeWaiter: Pair<String, CompletableDeferred<Unit>>? = null
     private var artworkRequest: Triple<String, String, String>? = null
 
     var onNowPlaying: ((NowPlaying) -> Unit)? = null
     var onDisconnect: ((Throwable?) -> Unit)? = null
 
     suspend fun connect() {
-        val conn = AirPlayConnection(host, AIRPLAY_PORT)
+        val conn = AirPlayConnection(host, port)
         conn.connect()
         connection = conn
 
         Log.d { "ap2: control connected" }
-        val verifier = AirPlayAuth.verify(conn, credentials)
+        val verifier = if (credentials == null) AirPlayAuth.transient(conn) else AirPlayAuth.verify(conn, credentials)
         Log.d { "ap2: pair-verify ok" }
 
         // --- event channel (required even though we ignore its traffic) ---
@@ -124,7 +136,7 @@ class Ap2Session(
         Log.d { "ap2: data channel connected on $dataPort" }
 
         // MRP handshake. DEVICE_INFO must come first or the device stays mute.
-        channel.sendProtobuf(Mrp.deviceInfo(String(credentials.clientId), deviceName))
+        channel.sendProtobuf(Mrp.deviceInfo(credentials?.clientId?.let { String(it) } ?: UUID.randomUUID().toString(), deviceName))
         delay(300)
         channel.sendProtobuf(Mrp.setConnectionState())
         channel.sendProtobuf(Mrp.clientUpdatesConfig())
@@ -198,6 +210,28 @@ class Ap2Session(
             return
         }
         when (type) {
+            Mrp.TYPE_DEVICE_INFO, 37 -> {
+                message.message(Mrp.EXT_DEVICE_INFO)?.let { info ->
+                    val newUid = info.string(35) ?: info.string(19)
+                    if (newUid != null && newUid != outputDeviceUid) {
+                        outputDeviceUid = newUid
+                        dataChannel?.sendProtobuf(Mrp.getVolume(newUid))
+                    }
+                    val ids = info.messages(28).mapNotNull { it.string(19) }.toMutableList()
+                    if (info.bool(29) == true && info.bool(24) != true) {
+                        info.string(1)?.let(ids::add)
+                        info.string(19)?.let(ids::add)
+                        info.string(35)?.let(ids::add)
+                    }
+                    routeWaiter?.let { (target, waiter) ->
+                        if (ids.any { it.equals(target, ignoreCase = true) }) waiter.complete(Unit)
+                    }
+                }
+            }
+            50 -> message.message(54)?.double(1)?.let { volume = it }
+            52 -> message.message(56)?.let { info ->
+                if (info.string(3) == outputDeviceUid) volume = info.double(1)
+            }
             Mrp.TYPE_SET_STATE -> applySetState(message.message(Mrp.EXT_SET_STATE))
             Mrp.TYPE_UPDATE_CONTENT_ITEM ->
                 applyContentItems(message.message(Mrp.EXT_UPDATE_CONTENT_ITEM))
@@ -341,6 +375,33 @@ class Ap2Session(
         if (state == nowPlaying) return
         nowPlaying = state
         onNowPlaying?.invoke(state)
+    }
+
+    fun sendCommand(command: Int) {
+        val channel = dataChannel ?: throw IllegalStateException("MRP channel is not connected")
+        MrpControl(channel::sendProtobuf).command(command)
+    }
+
+    fun setVolume(level: Double) {
+        require(level.isFinite() && level in 0.0..1.0) { "Volume must be between 0 and 1" }
+        val uid = outputDeviceUid ?: throw IllegalStateException("MRP output device ID is unavailable")
+        val channel = dataChannel ?: throw IllegalStateException("MRP channel is not connected")
+        MrpControl(channel::sendProtobuf).setVolume(uid, level)
+    }
+
+    fun volumeStep(up: Boolean) {
+        val channel = dataChannel ?: throw IllegalStateException("MRP channel is not connected")
+        MrpControl(channel::sendProtobuf).volumeStep(up)
+    }
+
+    suspend fun setOutputDevice(uid: String) = routingMutex.withLock {
+        val channel = dataChannel ?: throw IllegalStateException("MRP channel is not connected")
+        val waiter = CompletableDeferred<Unit>()
+        routeWaiter = uid to waiter
+        try {
+            MrpControl(channel::sendProtobuf).setOutputDevice(uid)
+            withTimeout(5000) { waiter.await() }
+        } finally { routeWaiter = null }
     }
 
     fun close() {

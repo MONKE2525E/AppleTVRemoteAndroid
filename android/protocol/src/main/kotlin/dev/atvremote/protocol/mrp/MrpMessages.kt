@@ -110,6 +110,29 @@ object Mrp {
         )
         .build()
 
+    fun transportCommand(command: Int): ByteArray = Protobuf.Builder()
+        .varint(FIELD_TYPE, 1).bytes(6, Protobuf.Builder().varint(1, command.toLong()).build()).build()
+
+    fun hidVolume(usage: Int, down: Boolean): ByteArray {
+        val prefix = "438922cf080200000000000000000000010000000000000002000000200000000300000001000000000000"
+            .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val data = prefix + byteArrayOf(0, 12, 0, usage.toByte(), 0, if (down) 1 else 0) +
+            byteArrayOf(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0)
+        return Protobuf.Builder().varint(FIELD_TYPE, 8)
+            .bytes(13, Protobuf.Builder().bytes(1, data).build()).build()
+    }
+
+    fun getVolume(uid: String): ByteArray = Protobuf.Builder()
+        .varint(FIELD_TYPE, 49).bytes(53, Protobuf.Builder().string(1, uid).build()).build()
+
+    fun setVolume(uid: String, level: Double): ByteArray = Protobuf.Builder()
+        .varint(FIELD_TYPE, 51).bytes(55, Protobuf.Builder().float(1, level.toFloat())
+            .string(2, uid).build()).build()
+
+    fun setOutputDevice(uid: String): ByteArray = Protobuf.Builder()
+        .varint(FIELD_TYPE, 48).bytes(52, Protobuf.Builder().varint(1, 1)
+            .string(4, uid).string(7, uid).build()).build()
+
     fun playbackQueueArtwork(location: Int, identifier: String): ByteArray = Protobuf.Builder()
         .varint(FIELD_TYPE, 32)
         .string(FIELD_IDENTIFIER, identifier)

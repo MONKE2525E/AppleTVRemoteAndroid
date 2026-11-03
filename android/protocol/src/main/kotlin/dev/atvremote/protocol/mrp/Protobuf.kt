@@ -145,6 +145,12 @@ object Protobuf {
             out.write(writeVarint(value))
         }
 
+        fun float(number: Int, value: Float) = apply {
+            out.write(writeVarint((number.toLong() shl 3) or 5))
+            val bits = value.toBits()
+            for (i in 0 until 4) out.write((bits ushr (8 * i)) and 0xff)
+        }
+
         fun double(number: Int, value: Double) = apply {
             out.write(writeVarint((number.toLong() shl 3) or 1))
             val bits = value.toBits()
