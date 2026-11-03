@@ -60,6 +60,16 @@ class FireTvDiscoveryTest {
         }
     }
 
+    @Test fun `certificate fallback preserves a paired DIAL identity after address change`() {
+        val aliases = mutableMapOf<String, String>()
+        val dial = "firetv:dial:uuid:paired"
+        val cert = "firetv:cert:abcd"
+        aliases[cert] = dial
+        val resolver = FireTvIdentities({ aliases[it] }, { id, canonical -> aliases[id] = canonical }, { it == dial })
+        val found = dev.atvremote.protocol.discovery.AppleTvDevice("TV", "192.168.1.9", 8080, "Fire TV", cert)
+        assertEquals(dial, resolver.resolve(found).identifier)
+    }
+
     @Test fun `discovery verifies the Fire TV DIAL app for any television brand`() {
         val server = okhttp3.mockwebserver.MockWebServer()
         server.start()

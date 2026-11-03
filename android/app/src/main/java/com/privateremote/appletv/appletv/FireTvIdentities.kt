@@ -13,7 +13,11 @@ internal class FireTvIdentities(
 
     @Synchronized fun resolve(device: AppleTvDevice): AppleTvDevice {
         val id = device.credentialKey
-        val source = if (id.startsWith("firetv:mdns:")) "mdns" else "dial"
+        val source = when {
+            id.startsWith("firetv:mdns:") -> "mdns"
+            id.startsWith("firetv:cert:") -> "cert"
+            else -> "dial"
+        }
         val known = lookup(id) ?: id
         val observed = addresses[device.address]?.takeIf { it.source != source }
         val canonical = when {

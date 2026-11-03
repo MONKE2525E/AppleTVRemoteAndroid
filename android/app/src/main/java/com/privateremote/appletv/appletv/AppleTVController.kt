@@ -57,6 +57,7 @@ class AppleTVController(
     private val rokuDiscovery = RokuDiscovery(appContext)
     private val fireDiscovery = AndroidDeviceDiscovery(appContext, fireTv = true)
     private val fireDialDiscovery = FireTvDiscovery(appContext)
+    private val fireSubnetDiscovery = FireTvSubnetDiscovery(appContext)
     @Volatile private var fireTv: FireTvRemote? = null
     private var firePairing: FireTvRemote? = null
     @Volatile private var roku: RokuRemote? = null
@@ -154,6 +155,11 @@ class AppleTVController(
                                     try { fireDialDiscovery.scan(DISCOVERY_TIMEOUT_MS, found) }
                                     catch (e: CancellationException) { throw e }
                                     catch (e: Exception) { Log.w(TAG, "Fire TV DIAL discovery failed", e) }
+                                }
+                                launch {
+                                    try { fireSubnetDiscovery.scan(found) }
+                                    catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
                                 }
                             }
                             synchronized(results) {
@@ -378,6 +384,7 @@ class AppleTVController(
                                 }
                                 launch { fireDiscovery.scan(3000, found) }
                                 launch { fireDialDiscovery.scan(3000, found) }
+                                launch { fireSubnetDiscovery.scan(found) }
                             }
                         } else discovery.scan(3000) { found -> devicesById[found.credentialKey] = found }
                     } catch (e: CancellationException) { throw e }
