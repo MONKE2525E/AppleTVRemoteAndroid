@@ -81,8 +81,8 @@ function remember(id: string, uri: string | null) {
 
 /** Resolves App Store artwork for Apple TV bundle ids, cached in memory and on disk. Never rejects. */
 export async function lookupAppleArtwork(bundleIds: string[]): Promise<Record<string, string>> {
-  await hydrate();
   const startedAt = epoch;
+  await hydrate();
   // Entries loaded earlier in this process age out too, not only the ones read from disk.
   const now = Date.now();
   for (const id of bundleIds) {

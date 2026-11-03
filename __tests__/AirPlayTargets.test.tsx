@@ -98,6 +98,25 @@ describe('App Store artwork cache', () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(calls);
   });
 
+  test('clearing while the stored cache is still loading does not store the lookup result', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    jest.mocked(NativeAppSettings.getPreference).mockImplementationOnce(async () => { await gate; return null; });
+    const fetchMock = jest.fn(async () => okResponse('com.hulu.Hulu'));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const { lookupAppleArtwork, clearArtworkCache } = loadModule();
+    const inFlight = lookupAppleArtwork(['com.hulu.Hulu']);
+    await act(async () => { await Promise.resolve(); });
+    clearArtworkCache();
+    jest.mocked(NativeAppSettings.setPreference).mockClear();
+    release();
+    await inFlight;
+    expect(NativeAppSettings.setPreference).not.toHaveBeenCalledWith('iconArtwork.v1', expect.stringContaining('com.hulu.Hulu'));
+    const calls = fetchMock.mock.calls.length;
+    await lookupAppleArtwork(['com.hulu.Hulu']);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(calls);
+  });
+
   test('clearing while a lookup is in flight does not store its result', async () => {
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
