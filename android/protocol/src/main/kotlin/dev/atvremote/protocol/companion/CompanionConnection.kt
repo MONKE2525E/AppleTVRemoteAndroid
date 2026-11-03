@@ -63,8 +63,11 @@ class CompanionConnection(
     private val host: String,
     private val port: Int,
     private val scope: CoroutineScope,
+    private val socketFactory: () -> Socket = { Socket() },
 ) : CompanionTransport {
-    private var socket: Socket? = null
+    @Volatile private var socket: Socket? = null
+    private val socketLock = Any()
+    private var closed = false
     private var input: DataInputStream? = null
     private var readerJob: Job? = null
     private var cipher: ChaChaCipher? = null
@@ -78,14 +81,25 @@ class CompanionConnection(
     override val isConnected: Boolean get() = socket?.isConnected == true && socket?.isClosed == false
 
     override suspend fun connect(timeoutMs: Int) = withContext(Dispatchers.IO) {
-        val s = Socket()
-        s.tcpNoDelay = true
-        // Lets the OS notice a peer that vanished without a clean shutdown.
-        s.keepAlive = true
-        s.connect(InetSocketAddress(host, port), timeoutMs)
-        socket = s
-        input = DataInputStream(s.getInputStream().buffered())
-        readerJob = scope.launch(Dispatchers.IO) { readLoop() }
+        val s = socketFactory()
+        synchronized(socketLock) {
+            if (closed) { s.close(); throw IOException("connection closed") }
+            socket = s
+        }
+        try {
+            s.tcpNoDelay = true
+            s.keepAlive = true
+            s.connect(InetSocketAddress(host, port), timeoutMs)
+            synchronized(socketLock) {
+                if (socket !== s) throw IOException("connection closed")
+                input = DataInputStream(s.getInputStream().buffered())
+                readerJob = scope.launch(Dispatchers.IO) { readLoop() }
+            }
+        } catch (e: Exception) {
+            synchronized(socketLock) { if (socket === s) socket = null }
+            runCatching { s.close() }
+            throw e
+        }
     }
 
     override fun enableEncryption(outputKey: ByteArray, inputKey: ByteArray) {
@@ -162,10 +176,13 @@ class CompanionConnection(
     }
 
     override fun close() {
-        readerJob?.cancel()
-        runCatching { socket?.close() }
-        socket = null
-        input = null
-        cipher = null
+        synchronized(socketLock) {
+            closed = true
+            readerJob?.cancel()
+            runCatching { socket?.close() }
+            socket = null
+            input = null
+            cipher = null
+        }
     }
 }
