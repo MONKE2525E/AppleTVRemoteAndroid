@@ -55,6 +55,11 @@ class AppleTVController(
     private val appContext = context.applicationContext
     private val discovery = AndroidDeviceDiscovery(appContext)
     private val rokuDiscovery = RokuDiscovery(appContext)
+    private val fireDiscovery = AndroidDeviceDiscovery(appContext, fireTv = true)
+    private val fireDialDiscovery = FireTvDiscovery(appContext)
+    private val fireSubnetDiscovery = FireTvSubnetDiscovery(appContext)
+    @Volatile private var fireTv: FireTvRemote? = null
+    private var firePairing: FireTvRemote? = null
     @Volatile private var roku: RokuRemote? = null
     private val store = CredentialStore(appContext)
     private val deviceName = "Android Remote"
@@ -119,16 +124,78 @@ class AppleTVController(
             val results = ConcurrentHashMap<String, AppleTvDevice>()
             while (isActive) {
                 try {
+                    val fireResults = mutableMapOf<String, AppleTvDevice>()
+                    val certifiedAddresses = FireTvCertifiedAddresses()
                     coroutineScope {
-                        val found: (AppleTvDevice) -> Unit = { device ->
-                            devicesById[device.credentialKey] = device
-                            results[device.credentialKey] = device
-                            listener?.onDevicesChanged(results.values.toList())
+                        val fireIdentities = FireTvIdentities(store::loadFireTvAlias, store::saveFireTvAlias) { store.loadFireTv(it) != null }
+                        val found: (AppleTvDevice) -> Unit = { discovered ->
+                            synchronized(results) {
+                                if (discovered.isFireTv) {
+                                    certifiedAddresses.record(discovered)
+                                    val device = fireIdentities.resolve(discovered)
+                                    val previous = fireResults[device.address] ?: results.values.firstOrNull { it.isFireTv && it.address == device.address }
+                                    val merged = mergeFireTvName(device, previous)
+                                    fireResults[device.address] = merged
+                                    results.values.filter { it.isFireTv && it.address == device.address }.forEach {
+                                        results.remove(it.credentialKey)
+                                        devicesById.remove(it.credentialKey, it)
+                                    }
+                                    devicesById[merged.credentialKey] = merged
+                                    results[merged.credentialKey] = merged
+                                    listener?.onDevicesChanged(results.values.toList())
+                                } else {
+                                    devicesById[discovered.credentialKey] = discovered
+                                    results[discovered.credentialKey] = discovered
+                                    listener?.onDevicesChanged(results.values.toList())
+                                }
+                            }
                         }
                         launch {
                             try { discovery.scan(DISCOVERY_TIMEOUT_MS, found) }
                             catch (e: CancellationException) { throw e }
                             catch (e: Exception) { Log.w(TAG, "Apple TV discovery failed", e) }
+                        }
+                        launch {
+                            coroutineScope {
+                                val multicastFound: (AppleTvDevice) -> Unit = { advertised ->
+                                    launch {
+                                        val certificate = try { probeFireTv(advertised.address, allowActivation = false) }
+                                        catch (e: CancellationException) { throw e }
+                                        catch (_: Exception) { null }
+                                        if (certificate != null) found(certificate)
+                                        found(advertised)
+                                    }
+                                }
+                                launch {
+                                    try { fireDiscovery.scan(DISCOVERY_TIMEOUT_MS, multicastFound) }
+                                    catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { Log.w(TAG, "Fire TV discovery failed", e) }
+                                }
+                                launch {
+                                    try { fireDialDiscovery.scan(DISCOVERY_TIMEOUT_MS, multicastFound) }
+                                    catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { Log.w(TAG, "Fire TV DIAL discovery failed", e) }
+                                }
+                                launch {
+                                    try {
+                                        delay(2000)
+                                        val foundAddresses = certifiedAddresses.snapshot()
+                                        fireSubnetDiscovery.scan(foundAddresses, found)
+                                    } catch (e: CancellationException) { throw e }
+                                    catch (e: Exception) { Log.w(TAG, "Fire TV subnet discovery failed", e) }
+                                }
+                            }
+                            synchronized(results) {
+                                results.values.filter { it.isFireTv }.forEach { previous ->
+                                    results.remove(previous.credentialKey)
+                                    devicesById.remove(previous.credentialKey, previous)
+                                }
+                                fireResults.values.forEach { device ->
+                                    devicesById[device.credentialKey] = device
+                                    results[device.credentialKey] = device
+                                }
+                                listener?.onDevicesChanged(results.values.toList())
+                            }
                         }
                         launch {
                             try { rokuDiscovery.scan(3000, found) }
@@ -156,6 +223,15 @@ class AppleTVController(
     suspend fun startPairing(deviceId: String) {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
         if (device.isRoku) { connect(deviceId); return }
+        if (device.isFireTv) {
+            stopDiscovery()
+            closePairing()
+            val candidate = FireTvRemote(device)
+            candidate.startPairing()
+            firePairing = candidate
+            pairingDevice = device
+            return
+        }
         if (device.kind == DeviceKind.HOMEPOD || device.kind == DeviceKind.AIRPLAY) {
             startAirPlayPairing(deviceId); return
         }
@@ -179,6 +255,17 @@ class AppleTVController(
 
     suspend fun submitPin(deviceId: String, pin: String): Boolean {
         if (airplayPairingDevice?.credentialKey == deviceId) return submitAirPlayPin(deviceId, pin)
+        val fire = firePairing
+        if (fire != null) {
+            val device = pairingDevice ?: throw IllegalStateException("No pairing in progress")
+            require(device.credentialKey == deviceId) { "Pairing device changed" }
+            val (token, certificate) = fire.completePairing(pin)
+            store.saveFireTv(deviceId, token, certificate)
+            closePairing()
+            try { connect(deviceId) } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Log.w(TAG, "Fire TV pairing succeeded but connection failed", e) }
+            return true
+        }
         val session = pairingSession ?: throw IllegalStateException("No pairing in progress")
         val device = pairingDevice ?: throw IllegalStateException("No pairing in progress")
         val credentials = try {
@@ -210,6 +297,7 @@ class AppleTVController(
     private fun closePairing() {
         runCatching { pairingClient?.close() }
         pairingClient = null
+        firePairing = null
         pairingSession = null
         pairingDevice = null
     }
@@ -287,12 +375,54 @@ class AppleTVController(
     suspend fun connect(deviceId: String) = connectionGate.withLock {
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
         if (!device.controllable) throw TargetUnsupportedException()
+        if (store.loadLastDevice()?.credentialKey?.let { it != deviceId } == true) store.clearLastDevice()
+        if (currentDevice?.credentialKey != deviceId) {
+            autoReconnectJob?.cancel()
+            nowPlayingJob?.cancel()
+            remote?.onDisconnect = null
+            ap2?.onDisconnect = null
+            runCatching { remote?.close() }
+            runCatching { ap2?.close() }
+            roku?.close()
+            remote = null
+            ap2 = null
+            roku = null
+            fireTv = null
+            currentDevice = null
+            lastNowPlaying = null
+            lastCapabilities = null
+            listener?.onPlaybackChanged(null)
+        }
         try {
             retryConnection(beforeRetry = {
                 // Saved Companion ports and addresses can change while the app is closed.
                 if (!device.isRoku) {
                     try {
-                        discovery.scan(3000) { found -> devicesById[found.credentialKey] = found }
+                        if (device.isFireTv) {
+                            coroutineScope {
+                                val fireIdentities = FireTvIdentities(store::loadFireTvAlias, store::saveFireTvAlias) { store.loadFireTv(it) != null }
+                                val matched = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+                                val found: (AppleTvDevice) -> Unit = { discovered ->
+                                    val found = fireIdentities.resolve(discovered)
+                                    devicesById[found.credentialKey] = found
+                                    if (found.credentialKey == deviceId) matched.add(found.address)
+                                }
+                                coroutineScope {
+                                    val multicastFound: (AppleTvDevice) -> Unit = { advertised ->
+                                        launch {
+                                            val certificate = try { probeFireTv(advertised.address, allowActivation = false) }
+                                            catch (e: CancellationException) { throw e }
+                                            catch (_: Exception) { null }
+                                            certificate?.let(found)
+                                            found(advertised)
+                                        }
+                                    }
+                                    launch { fireDiscovery.scan(3000, multicastFound) }
+                                    launch { fireDialDiscovery.scan(3000, multicastFound) }
+                                }
+                                fireSubnetDiscovery.scan(matched.toSet(), found)
+                            }
+                        } else discovery.scan(3000) { found -> devicesById[found.credentialKey] = found }
                     } catch (e: CancellationException) { throw e }
                     catch (e: Exception) { Log.w(TAG, "Reconnect discovery failed", e) }
                 }
@@ -303,7 +433,8 @@ class AppleTVController(
             }
         } catch (e: Exception) {
             if (e is CancellationException && e !is TimeoutCancellationException) throw e
-            val stale = e is HapException || (device.kind == DeviceKind.APPLE_TV && store.loadCompanion(deviceId) == null)
+            if (e is FireTvAuthenticationException) store.forgetDevice(deviceId)
+            val stale = e is HapException || e is FireTvAuthenticationException || (device.isFireTv && store.loadFireTv(deviceId) == null) || (!device.isFireTv && device.kind == DeviceKind.APPLE_TV && store.loadCompanion(deviceId) == null)
             publishConnection(ConnectionState.Failed(
                 deviceFor(deviceId) ?: device, e.message ?: "connect failed", stale, !stale,
             ))
@@ -315,6 +446,10 @@ class AppleTVController(
         val device = deviceFor(deviceId) ?: throw IllegalArgumentException("Unknown device $deviceId")
         textFocusGate.clear()
         if (currentDevice?.credentialKey != deviceId) autoReconnectJob?.cancel()
+        if (device.isFireTv) {
+            connectFireTv(device)
+            return
+        }
         if (device.isRoku) {
             connectRoku(device)
             return
@@ -329,6 +464,7 @@ class AppleTVController(
         ap2 = null
         roku?.close()
         roku = null
+        fireTv = null
         val credentials = store.loadCompanion(device.credentialKey)
             ?: throw IllegalStateException("Not paired with ${device.name}")
         volumeBeforeMute = null
@@ -412,6 +548,29 @@ class AppleTVController(
         }
     }
 
+    private suspend fun connectFireTv(device: AppleTvDevice) {
+        val (token, certificate) = store.loadFireTv(device.credentialKey) ?: throw IllegalStateException("Not paired with Fire TV")
+        publishConnection(ConnectionState.Connecting(device))
+        val candidate = FireTvRemote(device, certificate, token)
+        candidate.verify()
+        nowPlayingJob?.cancel()
+        remote?.onDisconnect = null
+        ap2?.onDisconnect = null
+        runCatching { remote?.close() }
+        runCatching { ap2?.close() }
+        remote = null
+        ap2 = null
+        roku = null
+        fireTv = candidate
+        currentDevice = device
+        store.saveLastDevice(device)
+        lastNowPlaying = null
+        lastCapabilities = MediaCapabilities(play = true, pause = true)
+        listener?.onCapabilitiesChanged(lastCapabilities!!)
+        listener?.onPlaybackChanged(null)
+        publishConnection(ConnectionState.Connected(device, true))
+    }
+
     private suspend fun connectRoku(device: AppleTvDevice) {
         nowPlayingJob?.cancel()
         roku?.close()
@@ -431,6 +590,7 @@ class AppleTVController(
             volumeBeforeMute = null
             rokuMuted = false
             roku = candidate
+            fireTv = null
             currentDevice = verified
             store.saveLastDevice(verified)
             lastCapabilities = MediaCapabilities(play = true, pause = true, volume = true)
@@ -510,6 +670,7 @@ class AppleTVController(
             remote = null
             roku?.close()
             roku = null
+            fireTv = null
             ap2 = null
             currentDevice = null
             lastNowPlaying = null
@@ -552,7 +713,9 @@ class AppleTVController(
     }
 
     /** Current session for a freshly bound JS runtime (Metro reload / process restart). */
-    fun isConnected(): Boolean = remote != null || roku != null || (ap2 != null && currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
+    fun isConnected(): Boolean = remote != null || roku != null || fireTv != null || (ap2 != null && currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
+
+    fun handlesVolumeKeys(): Boolean = isConnected() && fireTv == null
     fun snapshotPlayback(): NowPlaying? = lastNowPlaying
     fun snapshotCapabilities(): MediaCapabilities? = lastCapabilities
 
@@ -643,7 +806,7 @@ class AppleTVController(
 
     /** Fire-and-forget-with-retry: an Apple TV drops the connection routinely when it sleeps. */
     private suspend fun <T> command(block: suspend AppleTvRemote.() -> T): T {
-        if (roku != null) throw UnsupportedOperationException("This command is not supported on Roku")
+        if (roku != null || fireTv != null) throw UnsupportedOperationException("This command is not supported on this TV")
         val current = remote
         if (current == null) {
             val revived = reconnect() ?: throw IOException("not connected")
@@ -745,7 +908,22 @@ class AppleTVController(
         else -> throw IllegalArgumentException("Unknown button $name")
     }
 
+    private suspend fun fireCommand(remote: FireTvRemote, name: String) {
+        try { remote.press(name) } catch (e: Exception) {
+            if (e is CancellationException || e !is IOException) throw e
+            val device = currentDevice
+            if (fireTv === remote && device != null) {
+                fireTv = null
+                val stale = e is FireTvAuthenticationException
+                if (stale) store.forgetDevice(device.credentialKey)
+                publishConnection(ConnectionState.Failed(device, e.message ?: "Fire TV command failed", stale, !stale))
+            }
+            throw e
+        }
+    }
+
     suspend fun pressButton(name: String) {
+        fireTv?.let { r -> buttonGate.withLock { fireCommand(r, name) }; return }
         roku?.let { r -> buttonGate.withLock { r.press(name) }; return }
         if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY)) {
             when (name.uppercase()) {
@@ -780,6 +958,7 @@ class AppleTVController(
 
     /** Held for long enough that tvOS reads it as a hold, not a tap (matches upstream's HOLD_MS). */
     suspend fun holdButton(name: String) {
+        fireTv?.let { r -> buttonGate.withLock { fireCommand(r, name) }; return }
         roku?.let { it.press(name); return }
         buttonGate.withLock { command { press(buttonFromName(name), holdMs = 1000L) } }
     }
@@ -788,7 +967,9 @@ class AppleTVController(
         buttonGate.withLock {
             val before = lastNowPlaying
             val r = roku
+            val fire = fireTv
             if (r != null) r.press("PLAY_PAUSE")
+            else if (fire != null) fireCommand(fire, "PLAY_PAUSE")
             else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
                 (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).sendCommand(3)
             else command { playPause() }
@@ -809,6 +990,8 @@ class AppleTVController(
             if (r != null) {
                 val state = r.playback().playbackState
                 if (state == PlaybackState.PLAYING && !playing || state == PlaybackState.PAUSED && playing) r.press("PLAY_PAUSE")
+            } else if (fireTv != null) {
+                throw UnsupportedOperationException("Fire TV does not report playback state")
             } else if (currentDevice?.kind in listOf(DeviceKind.HOMEPOD, DeviceKind.AIRPLAY))
                 (ap2 ?: throw IllegalStateException("AirPlay session is not connected")).sendCommand(if (playing) 1 else 2)
             else command { if (playing) play() else pause() }

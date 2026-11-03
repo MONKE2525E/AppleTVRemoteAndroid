@@ -54,7 +54,31 @@ class CredentialStore(context: Context) {
         prefs.edit().remove(airplayKey(deviceKey)).apply()
     }
 
+    fun loadFireTvAlias(id: String): String? {
+        prefs.getString("firetv-alias:$id", null)?.let { return it }
+        val certificate = id.removePrefix("firetv:cert:").takeIf { it != id } ?: return null
+        val existing = prefs.all.keys.asSequence().filter { it.startsWith("firetv:firetv:") }
+            .map { it.removePrefix("firetv:") }.firstOrNull { loadFireTv(it)?.second == certificate }
+        if (existing != null) saveFireTvAlias(id, existing)
+        return existing
+    }
+
+    fun saveFireTvAlias(id: String, canonical: String) {
+        prefs.edit().putString("firetv-alias:$id", canonical).apply()
+    }
+
+    fun saveFireTv(deviceKey: String, token: String, certificate: String) {
+        saveFireTvAlias("firetv:cert:$certificate", deviceKey)
+        prefs.edit().putString("firetv:$deviceKey", AppleTvSecureStore.encrypt(org.json.JSONObject().put("token", token).put("certificate", certificate).toString())).apply()
+    }
+
+    fun loadFireTv(deviceKey: String): Pair<String, String>? =
+        prefs.getString("firetv:$deviceKey", null)?.let(AppleTvSecureStore::decrypt)?.let {
+            runCatching { org.json.JSONObject(it).let { json -> Pair(json.getString("token"), json.getString("certificate")) } }.getOrNull()
+        }
+
     fun forgetDevice(deviceKey: String) {
+        prefs.edit().remove("firetv:$deviceKey").apply()
         forgetCompanion(deviceKey)
         forgetAirPlay(deviceKey)
     }

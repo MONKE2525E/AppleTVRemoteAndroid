@@ -117,6 +117,9 @@ layout mode, and the Media3 session projection. The diagnostics entry is disable
   Swipe-pad and notification controls use Roku Rev/Fwd keys, not a promised ten-second skip.
   Roku content metadata varies by channel; exact seeking and skip-by-seconds
   are not advertised. This does not add generic HomeKit or all AirPlay TV support.
+- On Android, Fire TV discovery also scans the phone's local IPv4 /24 when
+  multicast discovery is unavailable. On a wider subnet, devices outside that
+  /24 require multicast discovery to be visible.
 - Apple TV volume uses relative up/down keys. Held rocker repeats do not queue
   behind a slow TV, and stale input expires. Every key press attempts a release
   even when cancelled or when an acknowledgement fails. Infrared-only audio setups

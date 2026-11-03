@@ -70,6 +70,16 @@ export function PlayIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps
   );
 }
 
+export function PlayPauseIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3 5v14l9-7z" fill={color} />
+      <Rect x="14" y="5" width="3" height="14" rx="1" fill={color} />
+      <Rect x="19" y="5" width="3" height="14" rx="1" fill={color} />
+    </Svg>
+  );
+}
+
 export function PauseIcon({ size = DEFAULT_SIZE, color = COLORS.icon }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

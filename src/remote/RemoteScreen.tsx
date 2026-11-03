@@ -110,6 +110,7 @@ export function RemoteScreen() {
   const deviceLabel = connection.device.name;
   const touchSurfaceWidth = Math.max(0, contentRect.width - GEOMETRY.touchSurfaceSideMargin * scale * 2);
   const isRoku = connection.device.identifier?.startsWith('roku:') === true;
+  const isFireTv = connection.device.identifier?.startsWith('firetv:') === true;
   const hasNowPlaying = (
     (playback != null && playback.playbackState !== 'unknown' && playback.playbackState !== 'stopped') ||
     capabilities?.skipForward === true ||
@@ -121,7 +122,7 @@ export function RemoteScreen() {
 
   // The sheet replaces the pad: same bounds, same corner radius.
   const sheetHeight = padHeight;
-  const drawerHandleInset = DRAWER_HANDLE_HEIGHT * scale;
+  const drawerHandleInset = isFireTv ? 0 : DRAWER_HANDLE_HEIGHT * scale;
 
   const onPadLayout = (event: LayoutChangeEvent) => {
     const next = Math.max(0, Math.floor(event.nativeEvent.layout.height));
@@ -164,6 +165,7 @@ export function RemoteScreen() {
           connectedDeviceId={connection.device.id}
           label={deviceLabel}
           muted={muted}
+          showDeviceControls={!isFireTv}
           selectorOpen={selectorOpen}
           progress={progress}
           scale={scale}
@@ -204,7 +206,7 @@ export function RemoteScreen() {
           style={[styles.padSlot, { marginTop: GEOMETRY.gapTopBarToSurface * scale }]}
           onLayout={onPadLayout}
         >
-          <TextEntryPrompt key={connection.rokuSession ?? connection.device.id} roku={isRoku} rokuSessionId={connection.rokuSession ?? undefined} />
+          {!isFireTv && <TextEntryPrompt key={connection.rokuSession ?? connection.device.id} roku={isRoku} rokuSessionId={connection.rokuSession ?? undefined} />}
           <Animated.View
             pointerEvents={drawerOpen ? 'none' : 'auto'}
             importantForAccessibility={drawerOpen ? 'no-hide-descendants' : 'auto'}
@@ -235,7 +237,7 @@ export function RemoteScreen() {
             />
           ))}
           </Animated.View>
-          {padHeight > 0 && (
+          {padHeight > 0 && !isFireTv && (
             <PadOverlay
               width={touchSurfaceWidth}
               scale={scale}
@@ -246,7 +248,7 @@ export function RemoteScreen() {
               onTransfer={hasNowPlaying && !drawerOpen ? () => setTransferVisible(true) : undefined}
             />
           )}
-          {padHeight > 0 && (
+          {padHeight > 0 && !isFireTv && (
             <AppDrawer
               open={drawerOpen}
               active={drawerOpen || drawerPulling}
@@ -273,7 +275,7 @@ export function RemoteScreen() {
             },
           ]}
         >
-          <TransportRow scale={scale} playback={playback} />
+          <TransportRow scale={scale} playback={playback} toggleOnly={isFireTv} />
         </View>
       </View>
 
