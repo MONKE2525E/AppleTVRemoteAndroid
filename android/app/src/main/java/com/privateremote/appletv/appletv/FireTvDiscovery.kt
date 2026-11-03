@@ -82,9 +82,26 @@ internal fun readFireTvDevice(description: URL, dialPort: Int = 8009): AppleTvDe
 }
 
 private fun safeXml(bytes: ByteArray): org.w3c.dom.Document? = try {
-    // Parse the checked UTF-8 text rather than the original bytes, so an XML
-    // encoding declaration cannot hide a document type from this check.
-    val text = bytes.toString(Charsets.UTF_8)
+    // Parse the same decoded text that is checked, regardless of any XML
+    // declaration, so a different encoding cannot conceal a document type.
+    val prefix = bytes.take(4).map { it.toInt() and 0xff }
+    fun starts(vararg values: Int) = prefix.size >= values.size && values.indices.all { prefix[it] == values[it] }
+    val charset = when {
+        starts(0x00, 0x00, 0xfe, 0xff) || starts(0x00, 0x00, 0x00, 0x3c) -> "UTF-32BE"
+        starts(0xff, 0xfe, 0x00, 0x00) || starts(0x3c, 0x00, 0x00, 0x00) -> "UTF-32LE"
+        starts(0xfe, 0xff) || starts(0xff, 0xfe) -> "UTF-16"
+        starts(0x00, 0x3c) -> "UTF-16BE"
+        starts(0x3c, 0x00) -> "UTF-16LE"
+        else -> {
+            val header = bytes.take(256).toByteArray().toString(Charsets.ISO_8859_1)
+            Regex("""^<\?xml\s+[^?]*encoding\s*=\s*['"]([A-Za-z0-9._-]+)['"]""", RegexOption.IGNORE_CASE)
+                .find(header)?.groupValues?.get(1) ?: "UTF-8"
+        }
+    }
+    val decoder = java.nio.charset.Charset.forName(charset).newDecoder()
+        .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+    val text = decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF")
     if (text.contains("<!DOCTYPE", ignoreCase = true)) null else {
         val builder = DocumentBuilderFactory.newInstance().newDocumentBuilder()
         builder.setEntityResolver { _, _ -> throw org.xml.sax.SAXException("External entities are not allowed") }
