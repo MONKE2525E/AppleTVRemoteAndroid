@@ -5,14 +5,50 @@ import dev.atvremote.protocol.mrp.PlaybackState
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.net.ServerSocket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.net.SocketTimeoutException
 
 class RokuRemoteTest {
+    @Test fun `closing the Roku session stops an in-flight text batch`() {
+        ServerSocket(0).use { server ->
+            val received = CountDownLatch(1)
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val requests = executor.submit<List<String>> {
+                    val lines = mutableListOf<String>()
+                    server.accept().use { client ->
+                        val input = client.getInputStream().bufferedReader()
+                        lines.add(requireNotNull(input.readLine()))
+                        while (input.readLine()?.isNotEmpty() == true) { }
+                        received.countDown()
+                        client.getInputStream().read()
+                    }
+                    server.soTimeout = 500
+                    try { server.accept().use { lines.add(requireNotNull(it.getInputStream().bufferedReader().readLine())) } }
+                    catch (_: SocketTimeoutException) { }
+                    lines
+                }
+                val device = AppleTvDevice("Roku", "127.0.0.1", server.localPort, identifier = "roku:test")
+                val remote = RokuRemote(device, server.localPort)
+                runBlocking {
+                    val send = async(Dispatchers.IO) { runCatching { remote.sendText("abc") } }
+                    assertTrue(received.await(3, TimeUnit.SECONDS))
+                    remote.close()
+                    assertTrue(withTimeout(3000) { send.await() }.isFailure)
+                }
+                assertEquals(listOf("POST /keypress/Lit_a HTTP/1.1"), requests.get(3, TimeUnit.SECONDS))
+            } finally { executor.shutdownNow() }
+        }
+    }
+
     @Test fun `text sends encoded characters and backspace in order`() {
         val server = ServerSocket(0)
         val executor = Executors.newSingleThreadExecutor()

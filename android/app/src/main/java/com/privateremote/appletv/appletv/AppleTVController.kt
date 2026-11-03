@@ -294,6 +294,7 @@ class AppleTVController(
         ap2?.onDisconnect = null
         runCatching { ap2?.close() }
         ap2 = null
+        roku?.close()
         roku = null
         val credentials = store.loadCompanion(device.credentialKey)
             ?: throw IllegalStateException("Not paired with ${device.name}")
@@ -342,6 +343,9 @@ class AppleTVController(
     }
 
     private suspend fun connectRoku(device: AppleTvDevice) {
+        nowPlayingJob?.cancel()
+        roku?.close()
+        roku = null
         publishConnection(ConnectionState.Connecting(device))
         try {
             val candidate = RokuRemote(device)
@@ -427,6 +431,7 @@ class AppleTVController(
             runCatching { remote?.close() }
             runCatching { ap2?.close() }
             remote = null
+            roku?.close()
             roku = null
             ap2 = null
             currentDevice = null

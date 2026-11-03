@@ -23,6 +23,7 @@ import java.net.SocketTimeoutException
 import java.net.URLEncoder
 import javax.xml.parsers.DocumentBuilderFactory
 import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
@@ -41,6 +42,15 @@ class RokuHttpException(val statusCode: Int, message: String) : IOException(mess
 
 /** Roku ECP stays in the integration layer; it does not use Apple's pairing protocol. */
 class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8060) {
+    private val callsLock = Any()
+    private val calls = mutableSetOf<Call>()
+    private var closed = false
+
+    fun close() = synchronized(callsLock) {
+        closed = true
+        calls.forEach { it.cancel() }
+    }
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS).readTimeout(3, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
@@ -125,27 +135,35 @@ class RokuRemote(private val device: AppleTvDevice, private val ecpPort: Int = 8
             .header("Connection", "close")
             .method(method, if (method == "POST") ByteArray(0).toRequestBody() else null).build()
         val call = http.newCall(request)
-        closeOnCancellation({ call.cancel() }) {
-            call.execute().use { response ->
-                val status = response.code
-                if (status !in 200..299) {
-                    throw RokuHttpException(status, if (status == 401 || status == 403)
-                        "Enable Control by mobile apps in your Roku's advanced system settings."
-                        else "Roku returned HTTP $status")
-                }
-                response.body!!.byteStream().use { input ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(8192)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (output.size() + count > 512 * 1024) throw IOException("Roku response too large")
-                        output.write(buffer, 0, count)
+        synchronized(callsLock) {
+            if (closed) throw IOException("Roku session closed")
+            calls.add(call)
+        }
+        try {
+            closeOnCancellation({ call.cancel() }) {
+                call.execute().use { response ->
+                    val status = response.code
+                    if (status !in 200..299) {
+                        throw RokuHttpException(status, if (status == 401 || status == 403)
+                            "Enable Control by mobile apps in your Roku's advanced system settings."
+                            else "Roku returned HTTP $status")
                     }
-                    output.toByteArray()
+                    response.body!!.byteStream().use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (output.size() + count > 512 * 1024) throw IOException("Roku response too large")
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    }
                 }
             }
+        } finally {
+            synchronized(callsLock) { calls.remove(call) }
         }
     }
 
